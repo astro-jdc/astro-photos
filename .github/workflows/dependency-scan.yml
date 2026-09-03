@@ -115,7 +115,7 @@ jobs:
 
       - name: Trivy
         if: steps.check.outputs.existe == 'true'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: scan-${{ matrix.component }}:ci
           format: table
