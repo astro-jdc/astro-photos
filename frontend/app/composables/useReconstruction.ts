@@ -3,7 +3,7 @@ import { useApi } from './useApi'
 import { ApiError } from '~/lib/apiClient'
 import type {
   PageReconstruction,
-  PageReconstructionInput,
+  ReconstructionInput,
   Reconstruction,
   ReconstructionEvent,
   ReconstructionPreview,
@@ -31,7 +31,7 @@ export function useReconstruction() {
   const api = useApi()
 
   const job = shallowRef<Reconstruction | null>(null)
-  const inputs = shallowRef<PageReconstructionInput | null>(null)
+  const inputs = shallowRef<ReconstructionInput[] | null>(null)
   const result = shallowRef<ReconstructionResult | null>(null)
   const lastEvent = shallowRef<ReconstructionEvent | null>(null)
   const progress = ref(0)
@@ -53,7 +53,7 @@ export function useReconstruction() {
 
   async function loadInputs(id: string) {
     try {
-      inputs.value = await api.get<PageReconstructionInput>(`/reconstructions/${id}/inputs`)
+      inputs.value = await api.get<ReconstructionInput[]>(`/reconstructions/${id}/inputs`)
     } catch (e) {
       error.value = e instanceof ApiError ? e : new ApiError({ status: 0, title: 'unknown_error' })
     }

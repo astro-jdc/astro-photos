@@ -75,7 +75,12 @@ describe('exifToDraft', () => {
       accuracy_m: null,
     })
     expect(draft.equipment.camera_model).toBe('EOS R6')
-    expect(draft.equipment.aperture_mm).toBeCloseTo(71.43, 2)
+    expect(draft.equipment.focal_length_mm).toBe(200)
+    expect(draft.equipment.focal_ratio).toBeCloseTo(2.8, 2)
+    // `aperture_mm` NO se manda: es un campo derivado que calcula el
+    // backend (`focal_length_mm / focal_ratio`) y no existe en
+    // `EquipmentIn`. El cliente manda lo medido, no lo derivado.
+    expect('aperture_mm' in draft.equipment).toBe(false)
     expect(draft.widthPx).toBe(6000)
   })
 })

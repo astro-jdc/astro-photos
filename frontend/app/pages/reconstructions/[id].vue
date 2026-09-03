@@ -69,7 +69,7 @@ useSeoMeta({ title: () => t('reconstruction.title') })
   <div v-else-if="job" class="grid gap-6">
     <header class="grid gap-2">
       <h1 class="text-2xl font-semibold">
-        {{ job.object_name ?? t('reconstruction.title') }}
+        {{ t('reconstruction.title') }}
       </h1>
       <div class="flex flex-wrap items-center gap-2 text-sm">
         <span class="chip">{{ t(`reconstruction.status.${job.status}`) }}</span>
@@ -120,7 +120,7 @@ useSeoMeta({ title: () => t('reconstruction.title') })
     </p>
 
     <AiDisclosure
-      :uses-learned-model="job.uses_learned_model"
+      :uses-learned-model="(job.model_id !== null && job.model_id !== undefined)"
       :uncertainty-url="result?.uncertainty_map_url ?? null"
       comparison-href="#comparison"
     />
@@ -130,11 +130,11 @@ useSeoMeta({ title: () => t('reconstruction.title') })
       <p class="muted mt-1 text-sm">{{ t('reconstruction.compareHint') }}</p>
 
       <div
-        v-if="result.best_single_frame_url && result.preview_url"
+        v-if="result.best_single_frame?.preview_url && result.preview_url"
         class="relative mt-4 aspect-video w-full overflow-hidden rounded-lg bg-black"
       >
         <img
-          :src="result.best_single_frame_url"
+          :src="result.best_single_frame?.preview_url"
           :alt="t('reconstruction.compareBest')"
           class="absolute inset-0 h-full w-full object-contain"
         />
@@ -228,23 +228,13 @@ useSeoMeta({ title: () => t('reconstruction.title') })
 
       <p v-if="result" class="mt-4 flex flex-wrap gap-3 text-sm">
         <a
-          :href="result.result_url"
+          :href="result.result_url ?? undefined"
           class="btn-primary"
           target="_blank"
           rel="noopener noreferrer"
         >
           {{ t('reconstruction.downloadResult') }}
-        </a>
-        <a
-          v-if="result.fits_url"
-          :href="result.fits_url"
-          class="btn-secondary"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {{ t('reconstruction.downloadFits') }}
-        </a>
-        <a
+        </a>        <a
           v-if="result.report_url"
           :href="result.report_url"
           class="btn-secondary"
@@ -257,8 +247,8 @@ useSeoMeta({ title: () => t('reconstruction.title') })
     </section>
 
     <ProvenanceTable
-      :inputs="inputs?.items ?? []"
-      :attribution-url="result?.attribution_markdown_url ?? null"
+      :inputs="inputs ?? []"
+      :attribution-url="result?.attribution_md_url ?? null"
       :provenance-url="result?.provenance_json_url ?? null"
     />
   </div>

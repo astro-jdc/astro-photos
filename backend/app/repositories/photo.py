@@ -295,13 +295,36 @@ class PhotoRepository:
         return [self._attach_coords(row) for row in rows]
 
     async def increment_download(self, photo_id: uuid.UUID) -> None:
+        """Suma una descarga.
+
+        Mismo motivo que :meth:`increment_view` para ``synchronize_session=False``,
+        y aquí importa el doble: justo después de contar la descarga el servicio
+        fija ``license_locked_at`` sobre el mismo objeto ``Photo``. Con el objeto
+        expirado esa escritura falla con ``MissingGreenlet``, así que ni se servía
+        la descarga (500) ni se congelaba la licencia.
+        """
         await self.session.execute(
             update(Photo)
             .where(Photo.id == photo_id)
             .values(download_count=Photo.download_count + 1)
+            .execution_options(synchronize_session=False)
         )
 
     async def increment_view(self, photo_id: uuid.UUID) -> None:
+        """Suma una visita. Contador de estadística, no de negocio.
+
+        ``synchronize_session=False`` es obligatorio, no una optimización: con
+        la estrategia por defecto SQLAlchemy **expira** el objeto ``Photo`` que
+        el router acaba de cargar, y el primer acceso a un atributo durante la
+        serialización dispara un refresco perezoso fuera del greenlet de
+        asyncio (``MissingGreenlet``). Es decir, ``GET /photos/{id}`` devolvía
+        500 para toda foto visible. El precio es que el ``view_count`` que sale
+        en esta misma respuesta es el de antes de contarla, que es justamente
+        lo que tiene sentido enseñar.
+        """
         await self.session.execute(
-            update(Photo).where(Photo.id == photo_id).values(view_count=Photo.view_count + 1)
+            update(Photo)
+            .where(Photo.id == photo_id)
+            .values(view_count=Photo.view_count + 1)
+            .execution_options(synchronize_session=False)
         )

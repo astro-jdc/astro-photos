@@ -32,22 +32,22 @@ const selectedFocal = ref<number | 'all'>('all')
 
 const periods = computed(() => {
   const set = new Set<string>()
-  for (const c of props.coverage?.cells ?? []) set.add(c.period_start)
+  for (const c of props.coverage?.cells ?? []) set.add(c.period)
   return [...set].sort()
 })
 
 const latBins = computed(() => {
   const set = new Set<number>()
-  for (const c of props.coverage?.cells ?? []) set.add(c.lat_bin_deg)
+  for (const c of props.coverage?.cells ?? []) set.add(c.lat_bin)
   return [...set].sort((a, b) => b - a)
 })
 
 const grid = computed(() => {
   const byKey = new Map<string, number>()
   for (const cell of props.coverage?.cells ?? []) {
-    if (selectedFocal.value !== 'all' && cell.focal_bin_mm !== selectedFocal.value) continue
-    const key = `${cell.period_start}|${cell.lat_bin_deg}`
-    byKey.set(key, (byKey.get(key) ?? 0) + cell.photo_count)
+    if (selectedFocal.value !== 'all' && cell.focal_bin !== selectedFocal.value) continue
+    const key = `${cell.period}|${cell.lat_bin}`
+    byKey.set(key, (byKey.get(key) ?? 0) + cell.count)
   }
   return byKey
 })
@@ -75,7 +75,7 @@ function periodLabel(iso: string): string {
 }
 
 function cellsForFocal(focal: number): CoverageCell[] {
-  return (props.coverage?.cells ?? []).filter((c) => c.focal_bin_mm === focal)
+  return (props.coverage?.cells ?? []).filter((c) => c.focal_bin === focal)
 }
 
 async function initMap() {
@@ -96,10 +96,10 @@ async function initMap() {
         type: 'geojson',
         data: {
           type: 'FeatureCollection',
-          features: props.coverage!.sites.map((site) => ({
+          features: (props.coverage?.sites ?? []).map((site) => ({
             type: 'Feature' as const,
             geometry: { type: 'Point' as const, coordinates: [site.lon, site.lat] },
-            properties: { count: site.photo_count, precision: site.precision },
+            properties: { count: site.count, precision: site.precision },
           })),
         },
       })
@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
                 >
                   <td class="py-1 pr-3 font-mono">{{ round(site.lat, 2) }}</td>
                   <td class="py-1 pr-3 font-mono">{{ round(site.lon, 2) }}</td>
-                  <td class="py-1 pr-3">{{ site.photo_count }}</td>
+                  <td class="py-1 pr-3">{{ site.count }}</td>
                   <td class="py-1">{{ t(`photo.precision.${site.precision}`) }}</td>
                 </tr>
               </tbody>
@@ -255,8 +255,8 @@ onBeforeUnmount(() => {
 
       <div class="mt-6">
         <h3 class="font-medium">{{ t('coverage.gapsTitle') }}</h3>
-        <ul v-if="coverage.gaps.length > 0" class="mt-2 list-inside list-disc text-sm">
-          <li v-for="(gap, index) in coverage.gaps" :key="index">{{ gap.detail }}</li>
+        <ul v-if="(coverage.gaps ?? []).length > 0" class="mt-2 list-inside list-disc text-sm">
+          <li v-for="(gap, index) in coverage.gaps ?? []" :key="index">{{ gap.description }}</li>
         </ul>
         <p v-else class="muted mt-2 text-sm">{{ t('coverage.gapsEmpty') }}</p>
       </div>

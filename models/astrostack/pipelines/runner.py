@@ -106,7 +106,7 @@ def run_pipeline(
     seed: int | None = None,
     reconstruction_id: str | None = None,
     scratch: dict[str, Any] | None = None,
-    strict_licenses: bool = False,
+    strict_licenses: bool = True,
     write_provenance: bool = True,
 ) -> PipelineRun:
     """Run a declarative pipeline end to end.
@@ -120,6 +120,14 @@ def run_pipeline(
     scratch
         Injected into ``ctx.scratch``; used by the training harness to feed
         in-memory frames through ``op: io.frames``.
+    strict_licenses
+        Default ``True``, matching :func:`~astrostack.io.manifest.load_manifest`
+        and rule 1 of ``docs/licensing.md``: an ND input **blocks the job**, it
+        is not silently dropped. The backend already refuses such a job with a
+        422 before enqueueing it, so an ND arriving here means that gate leaked
+        — and failing loudly is the only safe answer to a licence gate that
+        leaked. Pass ``False`` explicitly for an offline run where dropping is
+        the intended behaviour.
     """
     cfg = config if isinstance(config, PipelineConfig) else load_pipeline(config)
     manifest = inputs if isinstance(inputs, Manifest) else load_manifest(inputs, strict_licenses)

@@ -11,6 +11,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import ValidationError
 
 from app.api.deps import (
     OptionalDbUser,
@@ -19,7 +20,7 @@ from app.api.deps import (
     get_photo_repository,
     get_photo_service,
 )
-from app.core.errors import BadRequestError, NotFoundError
+from app.core.errors import BadRequestError, NotFoundError, UnprocessableError
 from app.domain.licensing import LicenseCode
 from app.repositories.photo import PhotoRepository
 from app.repositories.sky_object import SkyObjectRepository
@@ -97,29 +98,47 @@ async def search_photos(
 
     # `from` es palabra reservada: el schema lo declara con alias, así que el
     # objeto se construye por validación en vez de por argumentos con nombre.
-    query = PhotoSearchQuery.model_validate(
-        {
-            "object": object,
-            "ra": ra,
-            "dec": dec,
-            "radius": radius,
-            "near": geo,
-            "from": date_from,
-            "to": date_to,
-            "min_focal": min_focal,
-            "max_focal": max_focal,
-            "filter": filter,
-            "license": licenses,
-            "usable_for": usable_for,
-            "min_quality": min_quality,
-            "tracked": tracked,
-            "owner": owner or owner_id,
-            "plate_solved": plate_solved,
-            "sort": sort,
-            "limit": min(limit, settings.max_page_size),
-            "cursor": cursor,
-        }
-    )
+    #
+    # El `try` no es decorativo: al validar a mano, la `ValidationError` de
+    # pydantic **no** pasa por el manejador de FastAPI y se escapaba como 500.
+    # Las reglas de `_coherent` (cono incompleto, min>max focal, from>to,
+    # sort=nearest sin `near`) son errores del usuario y tienen que salir 422
+    # en problem+json, no como error interno — que además dispara las alarmas.
+    try:
+        query = PhotoSearchQuery.model_validate(
+            {
+                "object": object,
+                "ra": ra,
+                "dec": dec,
+                "radius": radius,
+                "near": geo,
+                "from": date_from,
+                "to": date_to,
+                "min_focal": min_focal,
+                "max_focal": max_focal,
+                "filter": filter,
+                "license": licenses,
+                "usable_for": usable_for,
+                "min_quality": min_quality,
+                "tracked": tracked,
+                "owner": owner or owner_id,
+                "plate_solved": plate_solved,
+                "sort": sort,
+                "limit": min(limit, settings.max_page_size),
+                "cursor": cursor,
+            }
+        )
+    except ValidationError as exc:
+        raise UnprocessableError(
+            "Los filtros de búsqueda no son coherentes entre sí.",
+            errors=[
+                {
+                    "pointer": "/" + "/".join(str(part) for part in err["loc"]),
+                    "detail": err["msg"].removeprefix("Value error, "),
+                }
+                for err in exc.errors()
+            ],
+        ) from exc
 
     resolved_object_id: UUID | None = None
     if object:

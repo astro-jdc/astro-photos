@@ -50,13 +50,13 @@ export const useAuthStore = defineStore('auth', () => {
   const quota = computed(() => profile.value?.quota ?? null)
   const quotaRatio = computed(() => {
     const q = quota.value
-    if (!q || q.storage_quota_bytes <= 0) return 0
-    return Math.min(1, q.storage_used_bytes / q.storage_quota_bytes)
+    if (!q || q.quota_bytes <= 0) return 0
+    return Math.min(1, q.used_bytes / q.quota_bytes)
   })
   const canQueueJob = computed(() => {
     const q = quota.value
     if (!q) return false
-    return q.queued_jobs < q.max_queued_jobs && q.jobs_today < q.max_jobs_per_day
+    return q.jobs_queued_now < q.max_queued_jobs && q.jobs_today < q.max_jobs_per_day
   })
 
   function setSession(next: StoredSession | null) {

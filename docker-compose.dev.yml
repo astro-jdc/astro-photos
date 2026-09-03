@@ -13,7 +13,10 @@ services:
     ports: ["5432:5432"]
     volumes:
       - astro-db:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+      # `z` = relabel para SELinux. Sin él, en Fedora/RHEL con SELinux en
+      # Enforcing el contenedor recibe "Permission denied" al leer el fichero
+      # y el initdb se queda sin extensiones (postgis/pgvector/citext).
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U astro -d astrophotos"]
       interval: 5s
@@ -45,7 +48,7 @@ services:
     image: docker.io/softwaremill/elasticmq-native:latest
     ports: ["9324:9324"]
     volumes:
-      - ./scripts/elasticmq.conf:/opt/elasticmq.conf:ro
+      - ./scripts/elasticmq.conf:/opt/elasticmq.conf:ro,z
 
 volumes:
   astro-db:

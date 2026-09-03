@@ -5,12 +5,12 @@
  * (docs/api.md, paso 3 de la subida).
  */
 import exifr from 'exifr'
-import type { Equipment, GeoPoint } from '~/types/domain'
+import type { Equipment, GeoPointIn } from '~/types/domain'
 
 export interface ExifDraft {
   capturedAtLocal: string | null
   utcOffsetMinutes: number | null
-  location: GeoPoint | null
+  location: GeoPointIn | null
   equipment: Equipment
   widthPx: number | null
   heightPx: number | null
@@ -73,7 +73,6 @@ export function exifToDraft(raw: RawExif | null | undefined): ExifDraft {
     lens_model: str(data.LensModel) ?? str(data.LensMake),
     focal_length_mm: focal,
     focal_ratio: fNumber,
-    aperture_mm: focal !== null && fNumber !== null && fNumber > 0 ? focal / fNumber : null,
     exposure_seconds: num(data.ExposureTime),
     iso: num(data.ISO),
   }

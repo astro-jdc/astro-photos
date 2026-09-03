@@ -22,8 +22,8 @@ async function load(reset = false) {
   try {
     const page = await list({ cursor: reset ? null : cursor.value })
     items.value = reset ? page.items : [...items.value, ...page.items]
-    cursor.value = page.next_cursor
-    exhausted.value = page.next_cursor === null
+    cursor.value = page.next_cursor ?? null
+    exhausted.value = (page.next_cursor ?? null) === null
   } catch (e) {
     error.value = e instanceof ApiError ? e : new ApiError({ status: 0, title: 'unknown_error' })
   } finally {
@@ -60,14 +60,14 @@ useSeoMeta({
           <NuxtImg
             v-if="job.preview_url"
             :src="job.preview_url"
-            :alt="job.object_name ?? job.pipeline"
+            :alt="job.pipeline"
             class="h-full w-full object-cover"
             loading="lazy"
           />
         </NuxtLink>
         <div class="grid gap-2 p-3">
           <NuxtLink :to="`/reconstructions/${job.id}`" class="font-medium hover:underline">
-            {{ job.object_name ?? job.pipeline }}
+            {{ job.pipeline }}
           </NuxtLink>
           <p class="muted text-xs">
             {{ t(`reconstruction.status.${job.status}`) }} ·
@@ -75,7 +75,7 @@ useSeoMeta({
           </p>
           <div class="flex flex-wrap items-center gap-2">
             <LicenseBadge :code="job.license" />
-            <AiDisclosure compact :uses-learned-model="job.uses_learned_model" />
+            <AiDisclosure compact :uses-learned-model="(job.model_id !== null && job.model_id !== undefined)" />
           </div>
         </div>
       </li>

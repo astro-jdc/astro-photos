@@ -33,8 +33,8 @@ export function usePhotos(filters: Ref<PhotoFilters>) {
       const page = await api.get<PagePhotoSummary>('/photos', query, { anonymous: true })
       if (id !== requestId) return
       items.value = reset ? page.items : [...items.value, ...page.items]
-      cursor.value = page.next_cursor
-      exhausted.value = page.next_cursor === null
+      cursor.value = page.next_cursor ?? null
+      exhausted.value = (page.next_cursor ?? null) === null
     } catch (e) {
       if (id !== requestId) return
       error.value = e instanceof ApiError ? e : new ApiError({ status: 0, title: 'unknown_error' })

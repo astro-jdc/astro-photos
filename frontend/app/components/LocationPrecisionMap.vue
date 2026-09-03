@@ -8,14 +8,14 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { useI18n } from 'vue-i18n'
 import { useRuntimeConfig } from '#app'
 import { round } from '~/lib/astro'
-import type { GeoPoint, LocationPrecision } from '~/types/domain'
+import type { GeoPointIn, LocationPrecision } from '~/types/domain'
 
 const props = defineProps<{
-  location: GeoPoint | null
+  location: GeoPointIn | null
   precision: LocationPrecision
 }>()
 
-const emit = defineEmits<{ pick: [point: GeoPoint] }>()
+const emit = defineEmits<{ pick: [point: GeoPointIn] }>()
 
 const { t } = useI18n()
 const config = useRuntimeConfig()
@@ -32,7 +32,7 @@ const OBFUSCATION_M: Record<LocationPrecision, number> = {
   hidden: 0,
 }
 
-const published = computed<GeoPoint | null>(() => {
+const published = computed<GeoPointIn | null>(() => {
   if (!props.location || props.precision === 'hidden') return null
   if (props.precision === 'exact') return props.location
   const step = props.precision === 'city' ? 0.1 : 1

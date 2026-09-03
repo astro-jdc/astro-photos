@@ -48,11 +48,19 @@ const sorted = computed(() => [...props.inputs].sort((a, b) => b.weight - a.weig
         <tbody>
           <tr v-for="row in sorted" :key="row.photo_id" class="border-b border-night-800/70">
             <td class="py-2 pr-3">
-              <NuxtLink :to="`/photos/${row.photo_id}`" class="hover:underline">
-                {{ row.photo.title || t('photo.untitled') }}
+              <!--
+                `ReconstructionInputOut` no anida la foto: trae el id y la
+                autoría congelada en el momento del uso, que es justamente lo
+                que la procedencia tiene que enseñar (un cambio posterior de
+                nombre no reescribe una reconstrucción publicada).
+              -->
+              <NuxtLink :to="`/photos/${row.photo_id}`" class="font-mono hover:underline">
+                {{ row.photo_id.slice(0, 8) }}
               </NuxtLink>
             </td>
-            <td class="py-2 pr-3">{{ row.photo.owner.display_name }}</td>
+            <td class="py-2 pr-3">
+              {{ row.snapshot_attribution_name || t('common.unknown') }}
+            </td>
             <td class="py-2 pr-3 font-mono">{{ round(row.weight, 3) }}</td>
             <td class="py-2 pr-3"><LicenseBadge :code="row.snapshot_license" /></td>
             <td class="py-2 pr-3 font-mono">

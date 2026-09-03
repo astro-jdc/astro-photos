@@ -109,7 +109,10 @@ def test_hay_dos_target_groups_y_un_listener_de_pruebas(env) -> None:
     names = {t["Properties"]["Name"] for t in target_groups.values()}
     assert names == {env.cfg.resource_name("blue"), env.cfg.resource_name("green")}
     for target_group in target_groups.values():
-        assert target_group["Properties"]["HealthCheckPath"] == "/readyz"
+        # FastAPI monta todo el router bajo `Settings.api_prefix` (`/api/v1`),
+        # sondas incluidas: `/readyz` a secas devuelve 404 y el target group
+        # nunca llega a estar sano. Verificado contra el backend real.
+        assert target_group["Properties"]["HealthCheckPath"] == "/api/v1/readyz"
 
     ports = {
         listener["Properties"]["Port"]

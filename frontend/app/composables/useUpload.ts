@@ -7,7 +7,7 @@ import {
   type ProgressHandler,
   type UploadedPart,
 } from '~/lib/upload'
-import type { Photo, PhotoCompleteRequest, PresignedPost, UploadRequest } from '~/types/domain'
+import type { Photo, PhotoCompleteRequest, UploadRequest, UploadTicket } from '~/types/domain'
 
 /**
  * Los tres pasos de docs/api.md:
@@ -28,19 +28,26 @@ export function useUpload() {
   }
 
   function ticket(request: UploadRequest) {
-    return api.post<PresignedPost>('/photos/uploads', request)
+    return api.post<UploadTicket>('/photos/uploads', request)
   }
 
+  /**
+   * `UploadTicketOut` trae exactamente uno de `presigned_post` o `multipart`
+   * (lo garantiza el backend); aquí se elige el camino según cuál viene.
+   */
   async function transfer(
-    presigned: PresignedPost,
+    ticket: UploadTicket,
     file: File,
     onProgress?: ProgressHandler,
     signal?: AbortSignal,
   ): Promise<UploadedPart[] | null> {
-    if (presigned.multipart) {
-      return uploadMultipart(presigned.multipart, file, onProgress, signal)
+    if (ticket.multipart) {
+      return uploadMultipart(ticket.multipart, file, onProgress, signal)
     }
-    await uploadPresignedPost(presigned, file, onProgress, signal)
+    if (!ticket.presigned_post) {
+      throw new Error('El ticket de subida no trae ni presigned_post ni multipart.')
+    }
+    await uploadPresignedPost(ticket.presigned_post, file, onProgress, signal)
     return null
   }
 

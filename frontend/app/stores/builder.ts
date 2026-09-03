@@ -67,10 +67,10 @@ export const useBuilderStore = defineStore('builder', () => {
   /** Pista local mientras el servidor contesta. Nunca decide por sí sola. */
   const licenseHint = computed(() =>
     resolveOutputLicenseHint(
-      frames.value.map((f) => ({
-        license: f.license,
-        allowDerivativesInStacks: f.allow_derivatives_in_stacks,
-      })),
+      // El resumen de foto no publica `allow_derivatives_in_stacks`; la pista
+      // se calcula solo con la licencia y el servidor tiene la última palabra
+      // en `POST /reconstructions/preview`.
+      frames.value.map((f) => ({ license: f.license, allowDerivativesInStacks: true })),
     ),
   )
 
@@ -113,6 +113,10 @@ export const useBuilderStore = defineStore('builder', () => {
       selector: null,
       pipeline: pipeline.value,
       params: params.value,
+      // El backend los exige; se mandan explícitos en vez de confiar en el
+      // default del servidor, que no viaja en el schema.
+      target_count: ids.value.length,
+      is_public: true,
     }
   }
 

@@ -747,10 +747,19 @@ def op_write(
     out_dir = ctx.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # La licencia de salida la decide el backend (`resolve_output_license()`) y
+    # viaja en el manifiesto; aquí solo se escribe. Un `output_license` en el
+    # YAML del pipeline la puede forzar para pruebas, pero lo normal es que
+    # venga del manifiesto: `models` nunca la calcula (regla dura 5).
+    if output_license is None:
+        output_license = ctx.manifest.output_license
+
     sr_result = None
     for value in inputs.values.values():
         if isinstance(value, dict) and "sr" in value:
             sr_result = value["sr"]
+
+    attribution_rows = ctx.manifest.attribution_rows()
 
     header_cards = {
         "PIPELINE": ctx.pipeline,
@@ -759,6 +768,22 @@ def op_write(
         "FLUXCONS": bool(coadd.flux_preserving),
         "SEED": ctx.seed,
     }
+    if output_license:
+        header_cards["LICENSE"] = output_license
+
+    # `docs/licensing.md`, regla 5: los créditos van en las cabeceras HISTORY
+    # del FITS, no solo en el ATTRIBUTION.md. El .md es un fichero suelto que
+    # se pierde en cuanto alguien reenvía únicamente la imagen; la cabecera
+    # viaja siempre con ella.
+    credits: list[str] = []
+    if output_license:
+        credits.append(f"LICENCE: {output_license} (derivative of the frames below)")
+    credits.append(f"ATTRIBUTION: {len(attribution_rows)} contributor(s), see ATTRIBUTION.md")
+    credits.extend(
+        f"CREDIT: {row['author']} ({row['license'] or 'unspecified'}) [{row['photo_id']}]"
+        for row in sorted(attribution_rows, key=lambda r: str(r.get("photo_id", "")))
+    )
+
     fits_path = out_dir / fits_name
     checksum = write_result_fits(
         fits_path,
@@ -768,7 +793,7 @@ def op_write(
         psf=coadd.psf,
         wcs=coadd.wcs,
         header_cards=header_cards,
-        history=coadd.notes,
+        history=[*coadd.notes, *credits],
     )
     ctx.provenance.add_output(
         "fits", fits_path, checksum, method=coadd.method, shape=list(coadd.image.shape)
@@ -811,7 +836,7 @@ def op_write(
     write_attribution(
         attribution_path,
         ctx.pipeline,
-        ctx.manifest.attribution_rows(),
+        attribution_rows,
         weights=coadd.frame_weights,
         output_license=output_license,
     )

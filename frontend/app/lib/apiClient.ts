@@ -66,8 +66,8 @@ export class ApiError extends Error {
   get fieldErrors(): Record<string, string> {
     const out: Record<string, string> = {}
     for (const e of this.errors) {
-      const key = (e.field ?? '').replace(/^#?\/?(body\/)?/, '')
-      if (key) out[key] = e.message
+      const key = (e.pointer ?? '').replace(/^#?\/?(body\/)?/, '')
+      if (key) out[key] = e.detail
     }
     return out
   }

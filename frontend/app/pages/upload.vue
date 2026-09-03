@@ -72,7 +72,7 @@ useSeoMeta({ title: () => t('upload.title'), description: () => t('upload.subtit
             />
             <LicensePicker
               :id-prefix="`lic-${item.id}`"
-              :model-value="item.metadata.license"
+              :model-value="item.metadata.license ?? undefined"
               :allow-ai-training="item.metadata.allow_ai_training"
               :allow-derivatives-in-stacks="item.metadata.allow_derivatives_in_stacks"
               @update:model-value="store.setMetadata(item.id, { license: $event })"

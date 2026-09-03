@@ -1,0 +1,1703 @@
+{
+  "_comment": "GENERADO por tests/contract/test_license_parity.py desde backend/app/domain/licensing.py. No editar a mano.",
+  "cases": [
+    {
+      "inputs": [
+        "CC0-1.0"
+      ],
+      "resulting_license": "CC0-1.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0"
+      ],
+      "resulting_license": "CC-BY-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0"
+      ]
+    },
+    {
+      "inputs": [
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0"
+      ],
+      "resulting_license": "CC0-1.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-4.0"
+      ],
+      "resulting_license": "CC-BY-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-4.0"
+      ],
+      "resulting_license": "CC-BY-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0",
+        "CC0-1.0"
+      ],
+      "resulting_license": "CC0-1.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0",
+        "CC-BY-4.0"
+      ],
+      "resulting_license": "CC-BY-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC0-1.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-4.0",
+        "CC-BY-4.0"
+      ],
+      "resulting_license": "CC-BY-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "CC-BY-NC-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC0-1.0",
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-4.0",
+        "CC-BY-4.0"
+      ],
+      "resulting_license": "CC-BY-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "CC-BY-NC-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-4.0",
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-SA-4.0",
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "CC-BY-NC-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-4.0",
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0"
+      ],
+      "resulting_license": "CC-BY-NC-SA-4.0",
+      "blocked": []
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-SA-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "CC-BY-NC-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-SA-4.0",
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "CC-BY-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-ND-4.0",
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-ND-4.0",
+        "CC-BY-NC-ND-4.0",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "CC-BY-NC-ND-4.0",
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "inputs": [
+        "ARR",
+        "ARR",
+        "ARR"
+      ],
+      "resulting_license": null,
+      "blocked": [
+        "p0",
+        "p1",
+        "p2"
+      ]
+    }
+  ]
+}

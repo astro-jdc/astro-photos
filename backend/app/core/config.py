@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, PostgresDsn, field_validator, model_validator
@@ -12,6 +13,17 @@ __all__ = ["Settings", "get_settings"]
 
 Environment = Literal["dev", "test", "staging", "prod"]
 AuthMode = Literal["local", "cognito"]
+
+#: `.env` vive en la raíz del repo (lo dice `.env.example`), pero el backend se
+#: arranca desde `backend/` (`make dev` hace `cd backend && uvicorn ...`). Un
+#: `env_file=".env"` relativo al cwd no encuentra nada y la app levanta sin
+#: `S3_ENDPOINT_URL` ni `SQS_ENDPOINT_URL`, apuntando a AWS real: `/readyz`
+#: responde 503 y la subida no funciona. Anclamos la ruta al repo.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+#: Se prueban en orden; pydantic-settings admite varios y el último gana, así que
+#: un `.env` propio del backend sigue pudiendo sobreescribir al de la raíz.
+_ENV_FILES = (_REPO_ROOT / ".env", _REPO_ROOT / "backend" / ".env", Path(".env"))
 
 #: Longitud mínima del secreto HS256 (RFC 7518 §3.2: al menos el tamaño del hash).
 MIN_JWT_SECRET_BYTES = 32
@@ -28,7 +40,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,

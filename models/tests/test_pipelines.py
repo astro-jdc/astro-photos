@@ -187,21 +187,49 @@ def test_mixed_psf_measurement_is_warned_about(corpus, tmp_path):
         assert not any("inconsistently" in w for w in run.provenance.warnings)
 
 
-def test_runner_records_rejected_inputs(corpus, tmp_path):
-    """A dropped frame leaves a row with a reason, per reconstruction_inputs."""
-    from astrostack.io.manifest import load_manifest
-
-    _, manifest = corpus
+def _manifest_with_nd(manifest):
+    """A copy of ``manifest`` whose first entry carries an ND licence."""
     entries = json.loads(manifest.read_text())
     entries[0]["license"] = "CC-BY-ND-4.0"
     bad = manifest.parent / "with_nd.json"
     bad.write_text(json.dumps(entries))
+    return bad
 
-    run = run_pipeline(CONFIG_DIR / "classical-stack-v1.yaml", bad, tmp_path / "o")
+
+def test_runner_records_rejected_inputs(corpus, tmp_path):
+    """A dropped frame leaves a row with a reason, per reconstruction_inputs.
+
+    ``strict_licenses=False`` is passed **explicitly**: dropping is the opt-in
+    behaviour, not the default (see the test below).
+    """
+    from astrostack.io.manifest import load_manifest
+
+    _, manifest = corpus
+    bad = _manifest_with_nd(manifest)
+
+    run = run_pipeline(
+        CONFIG_DIR / "classical-stack-v1.yaml", bad, tmp_path / "o", strict_licenses=False
+    )
     rejected = run.provenance.rejected_inputs
     assert len(rejected) == 1
     assert "forbids derivative works" in rejected[0]["rejection_reason"]
     assert len(load_manifest(bad, strict_licenses=False)) == 4
+
+
+def test_an_nd_input_blocks_the_run_by_default(corpus, tmp_path):
+    """Rule 1 of ``docs/licensing.md``: an ND **blocks**, it is not degraded away.
+
+    The backend refuses such a job with a 422 before it is ever enqueued, so an
+    ND arriving at the pipeline means that gate leaked — and a leaking licence
+    gate must fail loudly, not quietly drop the frame and publish anyway.
+    """
+    from astrostack.errors import LicenseViolation
+
+    _, manifest = corpus
+    bad = _manifest_with_nd(manifest)
+
+    with pytest.raises(LicenseViolation, match="forbids derivative works"):
+        run_pipeline(CONFIG_DIR / "classical-stack-v1.yaml", bad, tmp_path / "strict")
 
 
 def test_scratch_frames_can_bypass_disk(corpus, tmp_path):

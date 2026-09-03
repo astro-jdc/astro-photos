@@ -75,9 +75,12 @@ def main(log_level: str, json_logs: bool) -> None:
 @click.option("--reconstruction-id", default=None, help="Id from the reconstructions table.")
 @click.option(
     "--strict-licenses/--drop-unlicensed",
-    default=False,
+    default=True,
     show_default=True,
-    help="Fail on an ND-licensed input instead of dropping it.",
+    help=(
+        "Fail on an ND-licensed input instead of dropping it. Strict by default: "
+        "docs/licensing.md rule 1 says an ND blocks the job, it is not degraded away."
+    ),
 )
 @click.option("--quiet-summary", is_flag=True, help="Do not print the JSON summary.")
 def run(

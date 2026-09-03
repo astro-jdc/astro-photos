@@ -83,8 +83,8 @@ useSeoMeta({ title: () => name.value, description: () => t('coverage.description
         </div>
       </dl>
       <p v-if="object.is_ephemeral" class="muted text-sm">{{ t('object.ephemeral') }}</p>
-      <p v-if="object.aliases.length > 0" class="muted text-sm">
-        {{ t('object.aliases') }}: {{ object.aliases.join(', ') }}
+      <p v-if="(object.aliases ?? []).length > 0" class="muted text-sm">
+        {{ t('object.aliases') }}: {{ (object.aliases ?? []).join(', ') }}
       </p>
     </header>
 
@@ -123,7 +123,7 @@ useSeoMeta({ title: () => name.value, description: () => t('coverage.description
           </p>
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <LicenseBadge :code="job.license" />
-            <AiDisclosure compact :uses-learned-model="job.uses_learned_model" />
+            <AiDisclosure compact :uses-learned-model="(job.model_id !== null && job.model_id !== undefined)" />
           </div>
         </li>
       </ul>

@@ -34,8 +34,8 @@ useSeoMeta({ title: () => t('me.quota') })
         <p class="muted mt-2 text-sm">
           {{
             t('me.storageUsed', {
-              used: formatBytes(auth.quota.storage_used_bytes),
-              total: formatBytes(auth.quota.storage_quota_bytes),
+              used: formatBytes(auth.quota.used_bytes),
+              total: formatBytes(auth.quota.quota_bytes),
             })
           }}
         </p>
@@ -45,7 +45,7 @@ useSeoMeta({ title: () => t('me.quota') })
         <div class="flex justify-between gap-3">
           <dt class="muted text-sm">{{ t('me.jobsQueued') }}</dt>
           <dd class="font-mono text-sm">
-            {{ auth.quota.queued_jobs }} / {{ auth.quota.max_queued_jobs }}
+            {{ auth.quota.jobs_queued_now }} / {{ auth.quota.max_queued_jobs }}
           </dd>
         </div>
         <div class="flex justify-between gap-3">

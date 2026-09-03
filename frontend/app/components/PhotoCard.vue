@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useBuilderStore } from '~/stores/builder'
+import { forbidsStackDerivatives } from '~/lib/licensing'
 import type { PhotoSummary } from '~/types/domain'
 
 const props = withDefaults(
@@ -14,7 +15,14 @@ const builder = useBuilderStore()
 
 const title = computed(() => props.photo.title || t('photo.untitled'))
 const inBuilder = computed(() => builder.has(props.photo.id))
-const stackable = computed(() => props.photo.allow_derivatives_in_stacks)
+/**
+ * `PhotoSummaryOut` solo trae el código de licencia, no el consentimiento
+ * `allow_derivatives_in_stacks`. Con el código se descartan ND y ARR, que es
+ * la mayoría de los casos; un opt-out explícito sobre una licencia permisiva
+ * no se ve hasta `POST /reconstructions/preview`, que es obligatorio antes de
+ * lanzar nada y devuelve la foto en `blocked[]`.
+ */
+const stackable = computed(() => !forbidsStackDerivatives(props.photo.license))
 </script>
 
 <template>
@@ -37,16 +45,13 @@ const stackable = computed(() => props.photo.allow_derivatives_in_stacks)
       <NuxtLink :to="`/photos/${photo.id}`" class="font-medium leading-tight hover:underline">
         {{ title }}
       </NuxtLink>
-      <p class="muted text-xs">
-        {{ t('photo.by', { name: photo.owner.display_name }) }}
-        <template v-if="photo.object_name"> · {{ photo.object_name }}</template>
+      <p v-if="photo.captured_at_utc" class="muted text-xs">
+        {{ photo.captured_at_utc.slice(0, 10) }}
       </p>
 
       <div class="mt-auto flex flex-wrap items-center gap-1">
         <QualityBadge :score="photo.quality_score" />
         <LicenseBadge :code="photo.license" />
-        <span v-if="photo.focal_length_mm" class="chip">{{ photo.focal_length_mm }} mm</span>
-        <span v-if="photo.filter_name" class="chip">{{ photo.filter_name }}</span>
       </div>
 
       <button

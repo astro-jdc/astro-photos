@@ -86,7 +86,7 @@ function pipelineName(id: PipelineId): string {
               {{ frame.title || t('photo.untitled') }}
             </NuxtLink>
             <p class="muted truncate text-xs">
-              {{ t('photo.by', { name: frame.owner.display_name }) }}
+              {{ frame.captured_at_utc ? frame.captured_at_utc.slice(0, 10) : t('common.unknown') }}
             </p>
             <p
               v-if="blockedById.get(frame.id)"
@@ -181,7 +181,7 @@ function pipelineName(id: PipelineId): string {
             </div>
             <div class="flex justify-between gap-2">
               <dt class="muted">{{ t('builder.preview.cost') }}</dt>
-              <dd>${{ round(builder.preview.estimated_cost_usd, 2) }}</dd>
+              <dd>${{ round(builder.preview.estimated_cost_usd ?? 0, 2) }}</dd>
             </div>
             <div
               v-if="builder.preview.estimated_queue_seconds !== null"

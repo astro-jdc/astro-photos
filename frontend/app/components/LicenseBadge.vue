@@ -4,16 +4,23 @@ import { useI18n } from 'vue-i18n'
 import { licenseFacts } from '~/lib/licensing'
 import type { LicenseCode } from '~/types/domain'
 
-const props = withDefaults(defineProps<{ code: LicenseCode; showLink?: boolean }>(), {
-  showLink: false,
-})
+/**
+ * `code` admite `null`/`undefined` porque la licencia de una reconstrucción
+ * solo existe cuando el job ha resuelto sus entradas: mientras está en cola
+ * viaja como `null`. En ese caso no se pinta nada, en vez de inventar una
+ * licencia por defecto — que sería justo el bug legal que hay que evitar.
+ */
+const props = withDefaults(
+  defineProps<{ code?: LicenseCode | null; showLink?: boolean }>(),
+  { code: null, showLink: false },
+)
 
 const { t } = useI18n()
-const facts = computed(() => licenseFacts(props.code))
+const facts = computed(() => (props.code ? licenseFacts(props.code) : null))
 </script>
 
 <template>
-  <span class="inline-flex items-center gap-1">
+  <span v-if="code && facts" class="inline-flex items-center gap-1">
     <span
       class="chip font-mono"
       :class="

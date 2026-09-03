@@ -4,7 +4,7 @@ COMPOSE ?= podman-compose
 .DEFAULT_GOAL := help
 .PHONY: help setup setup-backend setup-models setup-infra setup-frontend \
         dev up down logs migrate seed test test-backend test-models test-frontend \
-        e2e lint fmt synth clean
+        e2e lint fmt synth clean test-cross test-all
 
 help: ## Muestra esta ayuda
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -52,7 +52,7 @@ migrate: ## Aplica las migraciones de Alembic
 seed: ## Datos sintéticos de desarrollo
 	backend/.venv/bin/python scripts/seed_dev.py
 
-test: test-backend test-models test-frontend ## Todos los tests
+test: test-backend test-models test-frontend ## Todos los tests por componente
 
 test-backend:
 	backend/.venv/bin/pytest backend/tests -q
@@ -62,6 +62,11 @@ test-models:
 
 test-frontend:
 	cd frontend && pnpm test
+
+test-cross: ## Tests transversales (contrato, integración e invariantes). Necesita `make up` + backend en marcha
+	backend/.venv/bin/pytest tests -q
+
+test-all: test test-cross ## Todo, incluidos los transversales
 
 e2e: ## Playwright contra el stack local
 	cd frontend && pnpm exec playwright test

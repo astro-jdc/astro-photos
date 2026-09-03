@@ -64,6 +64,11 @@ class Manifest:
     inputs: list[InputSpec]
     rejected: list[dict[str, str]] = field(default_factory=list)
     source: str = ""
+    #: Licencia de la obra derivada, **calculada por el backend** con
+    #: ``resolve_output_license()`` y transportada en el manifiesto. ``models``
+    #: la escribe en ``ATTRIBUTION.md`` y en las cabeceras del FITS, pero no la
+    #: decide: esa lógica vive en un único sitio (regla dura 5 de ``CLAUDE.md``).
+    output_license: str | None = None
 
     def __len__(self) -> int:
         return len(self.inputs)
@@ -103,9 +108,18 @@ def _scan_directory(root: Path) -> list[InputSpec]:
     return [InputSpec(path=p, meta=FrameMetadata(photo_id=p.stem)) for p in sorted(files, key=lambda p: (p.stem, str(p)))]
 
 
-def _read_manifest_file(path: Path) -> list[InputSpec]:
+def _read_manifest_file(path: Path) -> tuple[list[InputSpec], str | None]:
+    """Devuelve ``(specs, output_license)``.
+
+    El manifiesto puede ser una lista de entradas o un objeto con ``inputs``.
+    Solo la segunda forma puede transportar ``output_license``, que es la que
+    escribe el backend.
+    """
     payload = json.loads(path.read_text(encoding="utf-8"))
+    output_license: str | None = None
     if isinstance(payload, dict):
+        raw_license = payload.get("output_license")
+        output_license = str(raw_license) if raw_license else None
         payload = payload.get("inputs") or payload.get("photos") or []
     if not isinstance(payload, list):
         raise PipelineConfigError(f"{path}: manifest must be a list, or an object with 'inputs'")
@@ -124,7 +138,7 @@ def _read_manifest_file(path: Path) -> list[InputSpec]:
         fields = {k: v for k, v in entry.items() if k not in {"path", "file", "s3_key_original"}}
         fields.setdefault("photo_id", p.stem)
         specs.append(InputSpec(path=p, meta=FrameMetadata(**fields)))
-    return specs
+    return specs, output_license
 
 
 def load_manifest(source: str | Path, strict_licenses: bool = True) -> Manifest:
@@ -139,10 +153,11 @@ def load_manifest(source: str | Path, strict_licenses: bool = True) -> Manifest:
         job wants: one bad licence should not fail 400 good frames.
     """
     src = Path(source)
+    output_license: str | None = None
     if src.is_dir():
         specs = _scan_directory(src)
     elif src.is_file() and src.suffix.lower() == ".json":
-        specs = _read_manifest_file(src)
+        specs, output_license = _read_manifest_file(src)
     elif src.is_file():
         specs = [InputSpec(path=src, meta=FrameMetadata(photo_id=src.stem))]
     else:
@@ -172,4 +187,6 @@ def load_manifest(source: str | Path, strict_licenses: bool = True) -> Manifest:
     kept.sort(key=lambda s: s.photo_id)
     if not kept:
         raise PipelineConfigError(f"every input under {src} was rejected: {rejected}")
-    return Manifest(inputs=kept, rejected=rejected, source=str(src))
+    return Manifest(
+        inputs=kept, rejected=rejected, source=str(src), output_license=output_license
+    )

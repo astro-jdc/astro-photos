@@ -56,7 +56,7 @@ describe('toApiError', () => {
         status: 422,
         detail: 'Una de las fotos no permite derivadas',
         instance: '/api/v1/reconstructions',
-        errors: [{ field: 'body/photo_ids', message: 'la foto 42 es ND', code: 'nd' }],
+        errors: [{ pointer: 'body/photo_ids', detail: 'la foto 42 es ND', code: 'nd' }],
       },
       { status: 422, contentType: 'application/problem+json' },
     )

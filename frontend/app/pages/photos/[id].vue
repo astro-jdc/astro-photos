@@ -16,7 +16,7 @@ import {
   formatUtcOffset,
   round,
 } from '~/lib/astro'
-import type { PhotoSummary } from '~/types/domain'
+import type { LocationPrecision, PhotoSummary } from '~/types/domain'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -39,13 +39,53 @@ const { data: similarPage } = await useAsyncData(`photo-similar-${id.value}`, as
 if (error.value) setResponseStatus(error.value.status === 404 ? 404 : 502)
 
 const title = computed(() => photo.value?.title || t('photo.untitled'))
-const facts = computed(() => (photo.value ? licenseFacts(photo.value.license) : null))
+const facts = computed(() => (photo.value ? licenseFacts(photo.value.license.code) : null))
 
-const summary = computed<PhotoSummary | null>(() => photo.value ?? null)
+/** Autoría publicable: el backend expone `attribution_name`, no el perfil entero. */
+const author = computed(() => photo.value?.license.attribution_name || t('common.unknown'))
+
+/** La precisión vive dentro de `location`; sin `location` la foto es `hidden`. */
+const precision = computed<LocationPrecision>(() => photo.value?.location?.precision ?? 'hidden')
+
+/**
+ * Coordenadas ya ofuscadas por el backend. `lat`/`lon` pueden ser `null`
+ * dentro de un `location` presente, así que no basta con comprobar `location`.
+ */
+const coordinates = computed(() => {
+  const loc = photo.value?.location
+  if (!loc || loc.lat === null || loc.lon === null) return t('common.notAvailable')
+  return `${round(loc.lat, 3)}, ${round(loc.lon, 3)}`
+})
+
+/**
+ * `PhotoOut` no es un `PhotoSummaryOut`: el detalle anida la licencia y la
+ * calidad. El builder trabaja con resúmenes, así que se proyecta uno.
+ */
+const summary = computed<PhotoSummary | null>(() => {
+  const p = photo.value
+  if (!p) return null
+  return {
+    id: p.id,
+    owner_id: p.owner_id,
+    status: p.status,
+    title: p.title,
+    object_id: p.object_id,
+    thumb_url: p.thumb_url,
+    preview_url: p.preview_url,
+    captured_at_utc: p.captured_at_utc,
+    quality_score: p.quality.quality_score,
+    license: p.license.code,
+    location: p.location,
+    created_at: p.created_at,
+  }
+})
 const inBuilder = computed(() => (photo.value ? builder.has(photo.value.id) : false))
 
 const diffraction = computed(() => {
-  const aperture = photo.value?.equipment.aperture_mm
+  // El backend ya lo calcula; solo se recalcula si no vino.
+  const provided = photo.value?.optics.diffraction_limit_arcsec
+  if (provided) return `${round(provided, 2)}″`
+  const aperture = photo.value?.optics.aperture_mm
   if (!aperture) return null
   const value = diffractionLimitArcsec(aperture)
   return Number.isFinite(value) ? `${round(value, 2)}″` : null
@@ -68,17 +108,17 @@ useSeoMeta({
     <header class="grid gap-2">
       <h1 class="text-2xl font-semibold">{{ title }}</h1>
       <p class="muted text-sm">
-        {{ t('photo.by', { name: photo.attribution_name || photo.owner.display_name }) }}
-        <template v-if="photo.object_name">
+        {{ t('photo.by', { name: author }) }}
+        <template v-if="photo.object_id">
           ·
-          <NuxtLink v-if="photo.object_id" :to="`/objects/${photo.object_id}`" class="underline">
-            {{ photo.object_name }}
+          <NuxtLink :to="`/objects/${photo.object_id}`" class="underline">
+            {{ t('photo.fields.object') }}
           </NuxtLink>
         </template>
       </p>
       <div class="flex flex-wrap items-center gap-2">
-        <QualityBadge :score="photo.quality_score" />
-        <LicenseBadge :code="photo.license" show-link />
+        <QualityBadge :score="photo.quality.quality_score" />
+        <LicenseBadge :code="photo.license.code" show-link />
         <span v-if="photo.status !== 'ready'" class="chip border-amber-500/60 text-amber-300">
           {{ t(`upload.state.${photo.status === 'processing' ? 'completing' : 'queued'}`) }}
         </span>
@@ -101,15 +141,15 @@ useSeoMeta({
       <a
         :href="downloadUrl(photo.id)"
         class="btn-primary"
-        :aria-disabled="!facts?.allowsDerivatives && photo.license === 'ARR'"
+        :aria-disabled="!facts?.allowsDerivatives && photo.license.code === 'ARR'"
       >
         {{ t('photo.download') }}
       </a>
       <button
         type="button"
         :class="inBuilder ? 'btn-secondary' : 'btn-secondary'"
-        :disabled="!photo.allow_derivatives_in_stacks"
-        :title="photo.allow_derivatives_in_stacks ? undefined : t('photo.cannotStack')"
+        :disabled="!photo.license.allow_derivatives_in_stacks"
+        :title="photo.license.allow_derivatives_in_stacks ? undefined : t('photo.cannotStack')"
         @click="summary && builder.toggle(summary)"
       >
         {{ inBuilder ? t('photo.removeFromBuilder') : t('photo.addToBuilder') }}
@@ -123,19 +163,19 @@ useSeoMeta({
       <dl class="mt-3 grid gap-1 text-sm sm:grid-cols-2">
         <div class="flex gap-2">
           <dt class="muted">{{ t('license.picker.attribution') }}:</dt>
-          <dd>{{ photo.attribution_name || photo.owner.display_name }}</dd>
+          <dd>{{ author }}</dd>
         </div>
         <div class="flex gap-2">
           <dt class="muted">{{ t('license.picker.allowAiTraining') }}:</dt>
-          <dd>{{ photo.allow_ai_training ? t('common.yes') : t('common.no') }}</dd>
+          <dd>{{ photo.license.allow_ai_training ? t('common.yes') : t('common.no') }}</dd>
         </div>
         <div class="flex gap-2">
           <dt class="muted">{{ t('license.picker.allowDerivatives') }}:</dt>
-          <dd>{{ photo.allow_derivatives_in_stacks ? t('common.yes') : t('common.no') }}</dd>
+          <dd>{{ photo.license.allow_derivatives_in_stacks ? t('common.yes') : t('common.no') }}</dd>
         </div>
-        <div v-if="photo.license_locked_at" class="flex gap-2">
+        <div v-if="photo.license.locked_at" class="flex gap-2">
           <dt class="muted">{{ t('license.picker.default') }}:</dt>
-          <dd>{{ photo.license_locked_at }}</dd>
+          <dd>{{ photo.license.locked_at }}</dd>
         </div>
       </dl>
     </section>
@@ -162,7 +202,7 @@ useSeoMeta({
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.exposure') }}</dt>
-            <dd>{{ formatExposure(photo.equipment.exposure_seconds) }}</dd>
+            <dd>{{ formatExposure(photo.optics.exposure_seconds) }}</dd>
           </div>
         </dl>
       </section>
@@ -172,18 +212,16 @@ useSeoMeta({
         <dl class="mt-3 grid gap-1 text-sm">
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.locationPrecision') }}</dt>
-            <dd>{{ t(`photo.precision.${photo.location_precision}`) }}</dd>
+            <dd>{{ t(`photo.precision.${precision}`) }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.location') }}</dt>
-            <dd class="font-mono">
-              {{
-                photo.location_label ??
-                (photo.location
-                  ? `${round(photo.location.lat, 3)}, ${round(photo.location.lon, 3)}`
-                  : t('common.notAvailable'))
-              }}
-            </dd>
+            <!--
+              `lat`/`lon` son nullable aunque `location` no lo sea: con
+              precisión `country` sin país conocido el backend degrada a
+              `hidden` y manda los dos a null. Se comprueban los dos.
+            -->
+            <dd class="font-mono">{{ coordinates }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.elevation') }}</dt>
@@ -191,12 +229,12 @@ useSeoMeta({
               {{ photo.location?.elevation_m ? `${round(photo.location.elevation_m, 0)} m` : t('common.notAvailable') }}
             </dd>
           </div>
-          <div class="flex justify-between gap-3">
+          <div v-if="photo.site_id" class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.site') }}</dt>
-            <dd>{{ photo.site_name ?? t('common.notAvailable') }}</dd>
+            <dd class="font-mono">{{ photo.site_id }}</dd>
           </div>
         </dl>
-        <p class="field-help">{{ t(`photo.precisionHelp.${photo.location_precision}`) }}</p>
+        <p class="field-help">{{ t(`photo.precisionHelp.${precision}`) }}</p>
       </section>
 
       <section class="surface p-4">
@@ -205,32 +243,32 @@ useSeoMeta({
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.camera') }}</dt>
             <dd>
-              {{ [photo.equipment.camera_make, photo.equipment.camera_model].filter(Boolean).join(' ') || t('common.notAvailable') }}
+              {{ [photo.optics.camera_make, photo.optics.camera_model].filter(Boolean).join(' ') || t('common.notAvailable') }}
             </dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.lens') }}</dt>
-            <dd>{{ photo.equipment.lens_model ?? t('common.notAvailable') }}</dd>
+            <dd>{{ photo.optics.lens_model ?? t('common.notAvailable') }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.telescope') }}</dt>
-            <dd>{{ photo.equipment.telescope_model ?? t('common.notAvailable') }}</dd>
+            <dd>{{ photo.optics.telescope_model ?? t('common.notAvailable') }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.mount') }}</dt>
-            <dd>{{ photo.equipment.mount_model ?? t('common.notAvailable') }}</dd>
+            <dd>{{ photo.optics.mount_model ?? t('common.notAvailable') }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.focalLength') }}</dt>
-            <dd>{{ photo.equipment.focal_length_mm ? `${photo.equipment.focal_length_mm} mm` : t('common.notAvailable') }}</dd>
+            <dd>{{ photo.optics.focal_length_mm ? `${photo.optics.focal_length_mm} mm` : t('common.notAvailable') }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.focalRatio') }}</dt>
-            <dd>{{ photo.equipment.focal_ratio ? `f/${photo.equipment.focal_ratio}` : t('common.notAvailable') }}</dd>
+            <dd>{{ photo.optics.focal_ratio ? `f/${photo.optics.focal_ratio}` : t('common.notAvailable') }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.aperture') }}</dt>
-            <dd>{{ photo.equipment.aperture_mm ? `${round(photo.equipment.aperture_mm, 1)} mm` : t('common.notAvailable') }}</dd>
+            <dd>{{ photo.optics.aperture_mm ? `${round(photo.optics.aperture_mm, 1)} mm` : t('common.notAvailable') }}</dd>
           </div>
           <div v-if="diffraction" class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.diffractionLimit') }}</dt>
@@ -238,24 +276,24 @@ useSeoMeta({
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.filter') }}</dt>
-            <dd>{{ photo.equipment.filter_name ?? t('common.none') }}</dd>
+            <dd>{{ photo.optics.filter_name ?? t('common.none') }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.iso') }}</dt>
-            <dd>{{ photo.equipment.iso ?? t('common.notAvailable') }}</dd>
+            <dd>{{ photo.optics.iso ?? t('common.notAvailable') }}</dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.stacked') }}</dt>
             <dd>
-              {{ photo.equipment.is_stacked ? t('common.yes') : t('common.no') }}
-              <template v-if="photo.equipment.sub_frames">
-                ({{ photo.equipment.sub_frames }})
+              {{ photo.optics.is_stacked ? t('common.yes') : t('common.no') }}
+              <template v-if="photo.optics.sub_frames">
+                ({{ photo.optics.sub_frames }})
               </template>
             </dd>
           </div>
           <div class="flex justify-between gap-3">
             <dt class="muted">{{ t('photo.fields.tracked') }}</dt>
-            <dd>{{ photo.equipment.is_tracked ? t('common.yes') : t('common.no') }}</dd>
+            <dd>{{ photo.optics.is_tracked ? t('common.yes') : t('common.no') }}</dd>
           </div>
         </dl>
       </section>

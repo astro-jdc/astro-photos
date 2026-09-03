@@ -9,7 +9,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useObjectSearch } from '~/composables/useObjects'
 import type {
-  GeoPoint,
+  GeoPointIn,
   LocationPrecision,
   PhotoCompleteRequest,
   SkyObject,
@@ -73,7 +73,7 @@ function objectLabel(object: SkyObject): string {
   return common ? `${catalogued} — ${common}` : catalogued
 }
 
-function onLocationPick(point: GeoPoint) {
+function onLocationPick(point: GeoPointIn) {
   patch({ location: { ...(props.modelValue.location ?? {}), ...point } })
 }
 

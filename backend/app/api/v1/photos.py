@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -35,6 +36,26 @@ router = APIRouter(prefix="/photos", tags=["photos"])
 PhotoServiceDep = Annotated[PhotoService, Depends(get_photo_service)]
 UploadServiceDep = Annotated[UploadService, Depends(get_upload_service)]
 PhotoRepoDep = Annotated[PhotoRepository, Depends(get_photo_repository)]
+
+
+def _header_safe(value: str) -> str:
+    """Deja ``value`` en condiciones de viajar en una cabecera HTTP.
+
+    Las cabeceras se serializan en latin-1 (RFC 9110 §5.5); un carácter fuera de
+    ese repertorio hace que Starlette reviente con ``UnicodeEncodeError`` y la
+    respuesta salga 500. Y la línea de atribución lleva **siempre** una raya
+    (U+2014), además de los nombres de autor, que en este producto son de todo
+    el mundo: sin esto, toda descarga fallaba.
+
+    Los caracteres que latin-1 sí cubre (la mayoría de acentos europeos) se
+    dejan tal cual para que la cabecera siga siendo legible; el resto se
+    percent-codifica en UTF-8, de forma que el valor sigue siendo recuperable.
+    """
+    try:
+        value.encode("latin-1")
+    except UnicodeEncodeError:
+        return quote(value, safe=" ()\"'.,:;/-_@")
+    return value
 
 
 @router.post(
@@ -183,7 +204,7 @@ async def download_photo(
         response = RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
         # La atribución viaja también en cabecera: quien automatiza la descarga no
         # tiene por qué hacer otra llamada para saber a quién citar.
-        response.headers["X-Attribution"] = attribution
+        response.headers["X-Attribution"] = _header_safe(attribution)
         response.headers["X-License"] = photo.license.value
         return response
     return Response(

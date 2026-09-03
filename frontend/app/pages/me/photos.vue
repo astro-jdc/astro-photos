@@ -31,8 +31,8 @@ async function load(reset = false) {
       sort: 'recent',
     })
     items.value = reset ? page.items : [...items.value, ...page.items]
-    cursor.value = page.next_cursor
-    exhausted.value = page.next_cursor === null
+    cursor.value = page.next_cursor ?? null
+    exhausted.value = (page.next_cursor ?? null) === null
   } catch (e) {
     error.value = e instanceof ApiError ? e : new ApiError({ status: 0, title: 'unknown_error' })
   } finally {

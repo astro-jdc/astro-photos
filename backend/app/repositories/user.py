@@ -52,4 +52,8 @@ class UserRepository:
             update(User)
             .where(User.id == user_id)
             .values(storage_used_bytes=User.storage_used_bytes + delta_bytes)
+            # Igual que en los contadores de `photo.py`: sin esto SQLAlchemy
+            # expira el `User` que trae la petición y el siguiente acceso a un
+            # atributo hace IO perezosa fuera del greenlet (`MissingGreenlet`).
+            .execution_options(synchronize_session=False)
         )

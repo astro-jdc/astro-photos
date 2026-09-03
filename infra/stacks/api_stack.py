@@ -41,6 +41,12 @@ from stacks.data_stack import DB_NAME, EXTENSIONS_SQL
 
 #: Puerto del contenedor de FastAPI (uvicorn).
 CONTAINER_PORT = 8000
+
+#: Prefijo bajo el que FastAPI monta **todo** el router, sondas de salud
+#: incluidas (`Settings.api_prefix` en `backend/app/core/config.py`, y
+#: `docs/api.md`: "REST/JSON bajo `/api/v1`"). Sin él, `/healthz` y `/readyz`
+#: devuelven 404 y ni el contenedor ni el target group llegan a estar sanos.
+API_PREFIX = "/api/v1"
 #: Listener de pruebas del despliegue blue/green: CodeDeploy valida aquí la
 #: versión nueva antes de moverle el tráfico real.
 TEST_LISTENER_PORT = 8443
@@ -186,7 +192,7 @@ class ApiStack(BaseStack):
                 # /healthz es liveness: no toca la base de datos ni S3.
                 command=[
                     "CMD-SHELL",
-                    f"curl -fsS http://localhost:{CONTAINER_PORT}/healthz || exit 1",
+                    f"curl -fsS http://localhost:{CONTAINER_PORT}{API_PREFIX}/healthz || exit 1",
                 ],
                 interval=cdk.Duration.seconds(30),
                 timeout=cdk.Duration.seconds(5),
@@ -265,7 +271,7 @@ class ApiStack(BaseStack):
             health_check=elbv2.HealthCheck(
                 # /readyz comprueba DB + S3 + cola: es lo que decide si una tarea
                 # nueva puede recibir tráfico real (`docs/api.md`).
-                path="/readyz",
+                path=f"{API_PREFIX}/readyz",
                 healthy_http_codes="200",
                 interval=cdk.Duration.seconds(15),
                 timeout=cdk.Duration.seconds(5),

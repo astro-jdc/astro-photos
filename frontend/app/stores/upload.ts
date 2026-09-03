@@ -128,7 +128,7 @@ export const useUploadStore = defineStore('upload', () => {
     if (!item) return
     const next = { ...item.metadata, ...patch }
     // Coherencia forzosa: un ND no puede permitir su uso como frame.
-    if (forbidsStackDerivatives(next.license)) next.allow_derivatives_in_stacks = false
+    if (next.license && forbidsStackDerivatives(next.license)) next.allow_derivatives_in_stacks = false
     item.metadata = next
   }
 

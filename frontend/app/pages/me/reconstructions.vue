@@ -37,11 +37,11 @@ useSeoMeta({ title: () => t('me.reconstructions') })
       <ul v-if="items.length > 0" class="grid gap-3">
         <li v-for="job in items" :key="job.id" class="surface flex flex-wrap items-center gap-3 p-3">
           <NuxtLink :to="`/reconstructions/${job.id}`" class="font-medium hover:underline">
-            {{ job.object_name ?? job.pipeline }}
+            {{ job.pipeline }}
           </NuxtLink>
           <span class="chip">{{ t(`reconstruction.status.${job.status}`) }}</span>
           <LicenseBadge :code="job.license" />
-          <AiDisclosure compact :uses-learned-model="job.uses_learned_model" />
+          <AiDisclosure compact :uses-learned-model="(job.model_id !== null && job.model_id !== undefined)" />
           <span class="muted ml-auto text-xs">{{ job.created_at }}</span>
         </li>
       </ul>
