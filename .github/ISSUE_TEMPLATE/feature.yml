@@ -1,0 +1,62 @@
+name: Funcionalidad
+description: Propón algo nuevo
+title: "feat: "
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+      description: Empieza por el problema del usuario, no por la solución técnica.
+    validations:
+      required: true
+
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+    validations:
+      required: true
+
+  - type: dropdown
+    id: componentes
+    attributes:
+      label: Qué componentes toca
+      multiple: true
+      options: [backend, frontend, models, infra, docs]
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contrato
+    attributes:
+      label: Impacto en los contratos compartidos
+      options:
+        - label: Cambia `docs/api.md`
+        - label: Cambia `docs/data-model.md` (necesita migración de Alembic)
+        - label: Cambia la lógica de licencias (`backend/app/domain/licensing.py`)
+
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: coste
+    attributes:
+      label: Coste e impacto en infraestructura
+      description: ¿Necesita recursos nuevos en AWS? Staging tiene un techo de 30 €/mes.
+
+  - type: checkboxes
+    id: honestidad
+    attributes:
+      label: Comprobación de honestidad
+      description: Regla dura 1 de `CLAUDE.md`.
+      options:
+        - label: Esta propuesta no sugiere, ni en el texto de producto, que combinar fotos de observadores distintos sintetice una apertura o supere el límite de difracción
+          required: true

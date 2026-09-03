@@ -1,0 +1,100 @@
+name: pr-infra-diff
+
+# Regla 4 de `.claude/agents/infra-dev.md`: ningún cambio de infraestructura se
+# mergea sin que el diff se vea en el propio PR.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/pr-infra-diff.yml"
+
+concurrency:
+  group: infra-diff-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write # OIDC: `cdk diff` necesita leer el estado real de AWS
+
+jobs:
+  diff:
+    name: cdk diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # El diff se hace contra staging, que es una copia completa de prod.
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: infra/requirements.txt
+
+      - name: Instalar dependencias
+        working-directory: infra
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+
+      - name: Credenciales de AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: cdk-diff-pr-${{ github.event.pull_request.number }}
+
+      - name: cdk diff
+        id: diff
+        working-directory: infra
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cdk diff -c env=staging --all 2>&1 | tee /tmp/diff.txt
+
+      - name: Preparar el comentario
+        id: comment
+        run: |
+          # Los comentarios de GitHub tienen un limite de 65 536 caracteres.
+          {
+            echo 'body<<CDKDIFF'
+            echo '<!-- cdk-diff -->'
+            echo '### `cdk diff -c env=staging`'
+            echo
+            echo '```'
+            # Se quitan los codigos ANSI: en un comentario solo son ruido.
+            sed -e 's/\x1b\[[0-9;]*m//g' /tmp/diff.txt | head -c 60000
+            echo '```'
+            echo
+            echo "_Commit: ${{ github.event.pull_request.head.sha }}_"
+            echo CDKDIFF
+          } >> "$GITHUB_OUTPUT"
+
+      # Se busca el comentario anterior para reescribirlo en vez de acumular uno
+      # por push: el PR tiene que leerse, no ser un historial de diffs.
+      - name: Buscar el comentario anterior
+        uses: peter-evans/find-comment@v3
+        id: previo
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: "<!-- cdk-diff -->"
+
+      - name: Comentar en el PR
+        uses: peter-evans/create-or-update-comment@v4
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          comment-id: ${{ steps.previo.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.comment.outputs.body }}
+          edit-mode: replace
+
+      - name: Fallar si el diff no se pudo calcular
+        if: steps.diff.outcome == 'failure'
+        run: |
+          echo "cdk diff fallo; revisa el log"
+          exit 1

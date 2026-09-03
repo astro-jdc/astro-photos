@@ -1,0 +1,205 @@
+name: deploy-staging
+
+# Merge a `develop` → staging (`dev.astrophotos.app`). Ver `docs/branching.md`.
+#
+# Orden (importa):
+#   1. ECR         — los repositorios tienen que existir antes de subir imágenes.
+#   2. build/push  — backend y models, etiquetadas con el sha del commit.
+#   3. cdk deploy  — el resto de stacks, apuntando a ESA etiqueta.
+#   4. migraciones — tarea de ECS, ANTES de que la versión nueva reciba tráfico.
+#   5. frontend    — build, sync a S3 e invalidación de CloudFront.
+#   6. smoke test  — /readyz tiene que responder 200.
+#
+# Autenticación por OIDC: no hay ninguna clave de AWS guardada en el repositorio.
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ENVIRONMENT: staging
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  deploy:
+    name: deploy staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: staging
+      url: https://dev.astrophotos.app
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Etiqueta de imagen = sha del commit
+        id: meta
+        run: echo "image_tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: infra/requirements.txt
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Credenciales de AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: deploy-staging-${{ github.run_id }}
+
+      - name: Instalar dependencias de infra
+        working-directory: infra
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+
+      # --- 1. repositorios de imágenes ----------------------------------------
+      - name: cdk deploy Ecr
+        working-directory: infra
+        run: cdk deploy "AstroPhotos-${ENVIRONMENT}-Ecr" -c env=$ENVIRONMENT --require-approval never
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - uses: docker/setup-buildx-action@v3
+
+      # --- 2. imágenes --------------------------------------------------------
+      - name: Build y push del backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          platforms: linux/arm64
+          tags: ${{ steps.ecr.outputs.registry }}/astro-photos-staging-backend:${{ steps.meta.outputs.image_tag }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+          provenance: false
+
+      - name: Build y push de models
+        uses: docker/build-push-action@v6
+        with:
+          context: ./models
+          push: true
+          # La imagen de reconstruccion corre en instancias GPU x86 (g5/g6).
+          platforms: linux/amd64
+          tags: ${{ steps.ecr.outputs.registry }}/astro-photos-staging-models:${{ steps.meta.outputs.image_tag }}
+          cache-from: type=gha,scope=models
+          cache-to: type=gha,scope=models,mode=max
+          provenance: false
+
+      # --- 3. infraestructura -------------------------------------------------
+      - name: cdk deploy
+        working-directory: infra
+        run: |
+          cdk deploy --all \
+            -c env=$ENVIRONMENT \
+            -c backend_image_tag=${{ steps.meta.outputs.image_tag }} \
+            -c models_image_tag=${{ steps.meta.outputs.image_tag }} \
+            -c hosted_zone_id=${{ vars.HOSTED_ZONE_ID }} \
+            --require-approval never \
+            --outputs-file /tmp/outputs.json
+
+      - name: Exportar las salidas del stack
+        id: outputs
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          data = json.load(open("/tmp/outputs.json"))
+          flat = {k: v for stack in data.values() for k, v in stack.items()}
+          for key in (
+              "ClusterName",
+              "MigrationsTaskDefinitionArn",
+              "MigrationsSubnets",
+              "MigrationsSecurityGroup",
+              "SiteBucketName",
+              "DistributionId",
+          ):
+              print(f"{key}={flat.get(key, '')}")
+          PY
+
+      # --- 4. migraciones (ANTES de mover trafico) ----------------------------
+      - name: Migraciones de Alembic
+        run: |
+          set -euo pipefail
+          task_arn=$(aws ecs run-task \
+            --cluster "${{ steps.outputs.outputs.ClusterName }}" \
+            --task-definition "${{ steps.outputs.outputs.MigrationsTaskDefinitionArn }}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ steps.outputs.outputs.MigrationsSubnets }}],securityGroups=[${{ steps.outputs.outputs.MigrationsSecurityGroup }}],assignPublicIp=DISABLED}" \
+            --started-by "gha-${GITHUB_RUN_ID}" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Tarea de migraciones: $task_arn"
+          aws ecs wait tasks-stopped --cluster "${{ steps.outputs.outputs.ClusterName }}" --tasks "$task_arn"
+          exit_code=$(aws ecs describe-tasks \
+            --cluster "${{ steps.outputs.outputs.ClusterName }}" --tasks "$task_arn" \
+            --query "tasks[0].containers[?name=='migrate'].exitCode | [0]" --output text)
+          echo "Codigo de salida de alembic: $exit_code"
+          test "$exit_code" = "0"
+
+      # --- 5. frontend --------------------------------------------------------
+      - name: Build del frontend
+        working-directory: frontend
+        env:
+          NUXT_PUBLIC_API_BASE: https://dev.astrophotos.app/api/v1
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Sync a S3
+        run: |
+          set -euo pipefail
+          bucket="${{ steps.outputs.outputs.SiteBucketName }}"
+          # Los assets con hash en el nombre son inmutables; el HTML no.
+          aws s3 sync frontend/.output/public "s3://$bucket" \
+            --delete --exclude "*.html" --exclude "*.json" \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 sync frontend/.output/public "s3://$bucket" \
+            --delete --exclude "*" --include "*.html" --include "*.json" \
+            --cache-control "public,max-age=0,must-revalidate"
+
+      - name: Invalidar CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.outputs.outputs.DistributionId }}" \
+            --paths "/*" >/dev/null
+
+      # --- 6. smoke test ------------------------------------------------------
+      - name: Smoke test de /readyz
+        run: |
+          set -euo pipefail
+          for intento in $(seq 1 30); do
+            code=$(curl -s -o /tmp/readyz.json -w "%{http_code}" https://dev.astrophotos.app/api/v1/readyz || true)
+            if [ "$code" = "200" ]; then
+              echo "readyz OK"
+              cat /tmp/readyz.json
+              exit 0
+            fi
+            echo "intento $intento: HTTP $code"
+            sleep 10
+          done
+          echo "El despliegue no llego a estar listo"
+          cat /tmp/readyz.json || true
+          exit 1

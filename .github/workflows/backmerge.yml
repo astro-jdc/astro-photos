@@ -1,0 +1,86 @@
+name: backmerge
+
+# Tras un merge a `main` (release o hotfix), `develop` se queda atrás. Este
+# workflow abre el PR de vuelta automáticamente para que eso no pase nunca —
+# `docs/branching.md`: "el workflow abre el PR de back-merge automáticamente
+# para que develop nunca se quede atrás".
+#
+# No hace merge solo: abre un PR. Si hay conflicto, alguien tiene que mirarlo.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: backmerge
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  backmerge:
+    name: PR main -> develop
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Comprobar si develop ya esta al dia
+        id: check
+        run: |
+          set -euo pipefail
+          git fetch origin develop main
+          pendientes=$(git rev-list --count origin/develop..origin/main)
+          echo "pendientes=$pendientes" >> "$GITHUB_OUTPUT"
+          echo "main lleva $pendientes commits que develop no tiene"
+
+      - name: Crear la rama de back-merge
+        if: steps.check.outputs.pendientes != '0'
+        id: rama
+        run: |
+          set -euo pipefail
+          rama="chore/backmerge-main-${GITHUB_SHA::8}"
+          echo "rama=$rama" >> "$GITHUB_OUTPUT"
+          git checkout -B "$rama" origin/develop
+          if git merge --no-edit origin/main; then
+            echo "conflicto=false" >> "$GITHUB_OUTPUT"
+          else
+            # Se sube igualmente con los marcadores: el PR es el sitio donde se
+            # ve el conflicto y donde alguien lo resuelve.
+            echo "conflicto=true" >> "$GITHUB_OUTPUT"
+            git merge --abort
+            git reset --hard origin/develop
+          fi
+          git push --force-with-lease origin "$rama"
+
+      - name: Abrir el PR
+        if: steps.check.outputs.pendientes != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rama="${{ steps.rama.outputs.rama }}"
+          if [ "${{ steps.rama.outputs.conflicto }}" = "true" ]; then
+            aviso=$'> [!WARNING]\n> El merge automático tiene **conflictos**. Resuélvelos en esta rama antes de mergear.\n\n'
+          else
+            aviso=""
+          fi
+          existente=$(gh pr list --head "$rama" --base develop --json number --jq '.[0].number // empty')
+          if [ -n "$existente" ]; then
+            echo "Ya hay un PR abierto: #$existente"
+            exit 0
+          fi
+          gh pr create \
+            --base develop --head "$rama" \
+            --title "chore: back-merge de main a develop (${GITHUB_SHA::8})" \
+            --body "${aviso}Back-merge automático tras el merge a \`main\` en ${GITHUB_SHA}.
+
+          \`develop\` debe contener siempre todo lo que hay en \`main\` (hotfixes incluidos).
+          Ver \`docs/branching.md\`." \
+            --label backmerge \
+            --label automated

@@ -1,0 +1,85 @@
+name: Bug
+description: Algo no funciona como debería
+title: "bug: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir: si es un problema de **calidad de una reconstrucción**, mira
+        `docs/research/multi-image-astro-reconstruction.md`. Hay límites físicos que
+        no son bugs (no ganamos resolución angular por encima del límite de
+        difracción de la mejor óptica contribuyente).
+
+  - type: dropdown
+    id: componente
+    attributes:
+      label: Componente
+      options:
+        - backend (API)
+        - frontend (Nuxt / visor)
+        - models (pipelines de reconstrucción)
+        - infra (AWS / CI)
+        - no lo sé
+    validations:
+      required: true
+
+  - type: dropdown
+    id: entorno
+    attributes:
+      label: Entorno
+      options: [dev (local), staging, producción]
+    validations:
+      required: true
+
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: Qué pasa
+      description: Comportamiento observado, sin interpretación.
+    validations:
+      required: true
+
+  - type: textarea
+    id: que-esperabas
+    attributes:
+      label: Qué esperabas que pasara
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Cómo reproducirlo
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: request-id
+    attributes:
+      label: X-Request-ID
+      description: Si es un error de la API, la cabecera `X-Request-ID` de la respuesta. Es lo que permite encontrar la traza exacta.
+
+  - type: input
+    id: ids
+    attributes:
+      label: IDs afectados
+      description: "`photo_id`, `reconstruction_id`, `model_id`... lo que aplique."
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs o error
+      render: text
+
+  - type: checkboxes
+    id: datos-personales
+    attributes:
+      label: Datos
+      options:
+        - label: He comprobado que lo que pego aquí no incluye tokens, coordenadas GPS privadas de terceros ni datos personales
+          required: true

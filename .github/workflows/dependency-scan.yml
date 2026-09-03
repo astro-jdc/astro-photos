@@ -1,0 +1,124 @@
+name: dependency-scan
+
+# Vulnerabilidades conocidas en las dependencias y en las imágenes base.
+# Dependabot (`.github/dependabot.yml`) abre los PRs de actualización; esto es lo
+# que impide que una dependencia con CVE entre por un PR nuevo.
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+  schedule:
+    - cron: "23 6 * * 1"
+
+concurrency:
+  group: depscan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Falla el PR si introduce una dependencia con vulnerabilidad conocida o con
+  # una licencia incompatible con AGPL-3.0.
+  review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          # El proyecto es AGPL-3.0: una dependencia propietaria o con licencia
+          # incompatible es un problema legal, no un aviso.
+          deny-licenses: BUSL-1.1, SSPL-1.0, Elastic-2.0
+
+  python:
+    name: python (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: python -m pip install -U pip pip-audit
+
+      - name: backend
+        run: pip-audit --strict --progress-spinner off ./backend
+
+      - name: infra
+        run: pip-audit --strict --progress-spinner off -r infra/requirements.txt
+
+      - name: models
+        run: |
+          if [ -f models/pyproject.toml ]; then
+            pip-audit --strict --progress-spinner off ./models
+          fi
+
+  node:
+    name: node (pnpm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level high
+
+  # Las imágenes de contenedor: la base de `models/` lleva CUDA y es la que más
+  # superficie tiene.
+  images:
+    name: imagenes (trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, models]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar que hay Dockerfile
+        id: check
+        run: |
+          if [ -f "${{ matrix.component }}/Dockerfile" ]; then
+            echo "existe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "existe=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build local
+        if: steps.check.outputs.existe == 'true'
+        run: docker build -t scan-${{ matrix.component }}:ci ./${{ matrix.component }}
+
+      - name: Trivy
+        if: steps.check.outputs.existe == 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: scan-${{ matrix.component }}:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL

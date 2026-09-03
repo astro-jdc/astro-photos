@@ -1,0 +1,170 @@
+name: train-model
+
+# Entrenamiento manual en AWS Batch (GPU spot). No despliega nada: publica el
+# artefacto de métricas y deja los pesos en S3. El modelo se activa a mano con
+# `POST /models/{id}/activate` — ver `docs/branching.md`, ramas `model/*`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Entorno cuya infraestructura de Batch se usa
+        type: choice
+        options: [staging, prod]
+        default: staging
+      config:
+        description: "Config de entrenamiento (ruta dentro de models/configs/)"
+        type: string
+        required: true
+        default: configs/burst-sr-v1.yaml
+      dataset_snapshot:
+        description: "Snapshot del dataset (etiqueta DVC o prefijo de S3)"
+        type: string
+        required: true
+      hyperparams:
+        description: 'Hiperparámetros como JSON, p. ej. {"lr":0.0002,"epochs":40}'
+        type: string
+        required: false
+        default: "{}"
+      seed:
+        description: "Semilla. Fija por defecto: la reproducibilidad no es opcional."
+        type: string
+        required: false
+        default: "1337"
+      timeout_hours:
+        description: Timeout duro del job
+        type: string
+        required: false
+        default: "6"
+
+concurrency:
+  group: train-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  train:
+    name: entrenar en Batch
+    runs-on: ubuntu-latest
+    timeout-minutes: 720
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar los hiperparametros
+        run: |
+          python -c "import json,sys; json.loads(sys.argv[1])" '${{ inputs.hyperparams }}'
+
+      - name: Credenciales de AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: train-${{ github.run_id }}
+
+      - name: Preparar los overrides del contenedor
+        id: prep
+        env:
+          TRAIN_CONFIG: ${{ inputs.config }}
+          DATASET_SNAPSHOT: ${{ inputs.dataset_snapshot }}
+          HYPERPARAMS_JSON: ${{ inputs.hyperparams }}
+          SEED: ${{ inputs.seed }}
+        run: |
+          set -euo pipefail
+          RUN_ID="train-${GITHUB_SHA::8}-${GITHUB_RUN_ID}"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          RUN_ID="$RUN_ID" python - <<'PY' > /tmp/overrides.json
+          import json, os
+
+          keys = (
+              "TRAIN_CONFIG",
+              "DATASET_SNAPSHOT",
+              "HYPERPARAMS_JSON",
+              "SEED",
+              "RUN_ID",
+              "GITHUB_SHA",
+          )
+          print(
+              json.dumps(
+                  {
+                      "command": ["python", "-m", "astrostack.training.run"],
+                      "environment": [{"name": k, "value": os.environ[k]} for k in keys],
+                  }
+              )
+          )
+          PY
+          cat /tmp/overrides.json
+
+      - name: Lanzar el job de entrenamiento
+        id: submit
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TIMEOUT_HOURS: ${{ inputs.timeout_hours }}
+        run: |
+          set -euo pipefail
+          job_id=$(aws batch submit-job \
+            --job-name "${{ steps.prep.outputs.run_id }}" \
+            --job-queue "astro-photos-${ENVIRONMENT}-reconstruct" \
+            --job-definition "astro-photos-${ENVIRONMENT}-train" \
+            --timeout "attemptDurationSeconds=$(( TIMEOUT_HOURS * 3600 ))" \
+            --container-overrides "file:///tmp/overrides.json" \
+            --query jobId --output text)
+          echo "job_id=$job_id" >> "$GITHUB_OUTPUT"
+          echo "Job de Batch lanzado: $job_id"
+
+      - name: Esperar al job
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          job_id="${{ steps.submit.outputs.job_id }}"
+          while true; do
+            status=$(aws batch describe-jobs --jobs "$job_id" --query 'jobs[0].status' --output text)
+            echo "$(date -u +%H:%M:%S) estado: $status"
+            case "$status" in
+              SUCCEEDED) break ;;
+              FAILED)
+                aws batch describe-jobs --jobs "$job_id" \
+                  --query 'jobs[0].{reason:statusReason,attempts:attempts}' --output json
+                exit 1
+                ;;
+            esac
+            sleep 60
+          done
+
+      - name: Descargar metricas
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          mkdir -p artefactos
+          prefix="s3://astro-photos-${ENVIRONMENT}-derived/training/${{ steps.prep.outputs.run_id }}/"
+          aws s3 cp "$prefix" artefactos/ --recursive --exclude "*.pt" --exclude "*.safetensors" || true
+          ls -la artefactos/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: metricas-${{ steps.prep.outputs.run_id }}
+          path: artefactos/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Resumen
+        run: |
+          {
+            echo "## Entrenamiento \`${{ steps.prep.outputs.run_id }}\`"
+            echo
+            echo "| campo | valor |"
+            echo "|---|---|"
+            echo "| entorno | ${{ inputs.environment }} |"
+            echo "| config | \`${{ inputs.config }}\` |"
+            echo "| dataset | \`${{ inputs.dataset_snapshot }}\` |"
+            echo "| hiperparametros | \`${{ inputs.hyperparams }}\` |"
+            echo "| semilla | ${{ inputs.seed }} |"
+            echo "| job de Batch | \`${{ steps.submit.outputs.job_id }}\` |"
+            echo
+            echo "Los pesos NO se activan solos: usa \`POST /models/{id}/activate\`."
+          } >> "$GITHUB_STEP_SUMMARY"

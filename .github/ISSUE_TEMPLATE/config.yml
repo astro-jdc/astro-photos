@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Pregunta o idea suelta
+    url: https://github.com/astro-jdc/astro-photos/discussions
+    about: Para lo que todavía no es ni un bug ni una propuesta concreta.
+  - name: Vulnerabilidad de seguridad
+    url: https://github.com/astro-jdc/astro-photos/security/advisories/new
+    about: NO abras un issue público. Repórtala en privado por aquí.

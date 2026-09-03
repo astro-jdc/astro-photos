@@ -1,0 +1,41 @@
+# Propiedad del código de astro-photos.
+#
+# El equipo de la última línea que coincide es el que revisa. Los ficheros que
+# son *contrato compartido* (docs/api.md, docs/data-model.md, licensing.py)
+# necesitan la revisión de más de un equipo a propósito: si cambian, cambian
+# para todos.
+#
+# Los equipos tienen que existir en la organización antes de que esto surta
+# efecto; `scripts/setup_repo.sh` avisa si alguno falta.
+
+# Por defecto
+*                                   @astro-jdc/maintainers
+
+# --- componentes -------------------------------------------------------------
+/backend/                           @astro-jdc/backend
+/frontend/                          @astro-jdc/frontend
+/models/                            @astro-jdc/astro-ml
+/infra/                             @astro-jdc/platform
+/.github/                           @astro-jdc/platform
+/scripts/                           @astro-jdc/platform
+
+# --- contratos compartidos ---------------------------------------------------
+/docs/api.md                        @astro-jdc/backend @astro-jdc/frontend
+/docs/data-model.md                 @astro-jdc/backend @astro-jdc/astro-ml
+/docs/architecture.md               @astro-jdc/platform @astro-jdc/maintainers
+/docs/branching.md                  @astro-jdc/platform
+
+# La licencia de salida = combinación más restrictiva de las entradas. Una sola
+# fuente de verdad, y no se toca sin que lo mire alguien de producto/legal.
+/backend/app/domain/licensing.py    @astro-jdc/maintainers @astro-jdc/backend
+/docs/licensing.md                  @astro-jdc/maintainers
+/LICENSE                            @astro-jdc/maintainers
+
+# Qué es físicamente posible. Cambiarlo cambia el roadmap entero.
+/docs/research/                     @astro-jdc/astro-ml @astro-jdc/maintainers
+
+# --- seguridad y coste -------------------------------------------------------
+/.github/workflows/deploy-prod.yml  @astro-jdc/platform @astro-jdc/maintainers
+/infra/config.py                    @astro-jdc/platform @astro-jdc/maintainers
+/CLAUDE.md                          @astro-jdc/maintainers
+/.claude/                           @astro-jdc/maintainers

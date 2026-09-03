@@ -1,0 +1,88 @@
+name: Entrenamiento de modelo
+description: Registrar y seguir una tirada de entrenamiento (rama model/*)
+title: "model: "
+labels: [model, experiment]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Un issue por tirada. Sirve de bitácora: sin esto, en tres meses nadie sabe
+        con qué datos ni con qué semilla se entrenó el modelo que está activo.
+        El entrenamiento se lanza con el workflow `train-model`.
+
+  - type: input
+    id: pipeline
+    attributes:
+      label: Pipeline
+      placeholder: burst-sr-v1
+    validations:
+      required: true
+
+  - type: input
+    id: config
+    attributes:
+      label: Config
+      placeholder: configs/burst-sr-v1.yaml
+    validations:
+      required: true
+
+  - type: input
+    id: dataset
+    attributes:
+      label: Snapshot del dataset
+      description: Etiqueta de DVC o prefijo de S3. Tiene que ser inmutable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: hiperparametros
+    attributes:
+      label: Hiperparámetros
+      render: json
+      placeholder: '{"lr": 0.0002, "epochs": 40, "batch_size": 8}'
+    validations:
+      required: true
+
+  - type: input
+    id: semilla
+    attributes:
+      label: Semilla
+      value: "1337"
+    validations:
+      required: true
+
+  - type: textarea
+    id: hipotesis
+    attributes:
+      label: Qué se espera mejorar y por qué
+      description: Contra qué baseline y en qué métrica (PSNR/SSIM, FWHM, SNR...).
+    validations:
+      required: true
+
+  - type: textarea
+    id: resultados
+    attributes:
+      label: Resultados
+      description: Se rellena al terminar. Pega la tabla de métricas del artefacto del workflow.
+      placeholder: |
+        | métrica | baseline | esta tirada |
+        |---|---|---|
+        | PSNR |  |  |
+        | SSIM |  |  |
+        | FWHM (arcsec) |  |  |
+
+  - type: input
+    id: job
+    attributes:
+      label: Job de AWS Batch
+      description: jobId de la tirada, para poder recuperar los logs.
+
+  - type: checkboxes
+    id: reglas
+    attributes:
+      label: Antes de proponer activar este modelo
+      options:
+        - label: La salida lleva mapa de incertidumbre y etiqueta de "generado"
+        - label: Misma entrada + `pipeline_version` + `params` reproduce la salida bit a bit
+        - label: El dataset respeta `allow_ai_training=false` de quien lo marcó
+        - label: Hay model card con métricas y limitaciones

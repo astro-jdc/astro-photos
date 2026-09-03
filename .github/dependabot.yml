@@ -1,0 +1,105 @@
+version: 2
+
+updates:
+  # --- GitHub Actions --------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "chore(actions)"
+
+  # --- backend ---------------------------------------------------------------
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+    commit-message:
+      prefix: "chore(backend)"
+    groups:
+      # Un PR por familia: 12 PRs sueltos a la semana no los revisa nadie.
+      fastapi:
+        patterns: ["fastapi", "starlette", "uvicorn*", "pydantic*", "sse-starlette"]
+      sqlalchemy:
+        patterns: ["sqlalchemy*", "alembic", "asyncpg", "geoalchemy2", "pgvector"]
+      tooling:
+        patterns: ["ruff", "mypy", "pytest*", "types-*", "schemathesis", "testcontainers*"]
+
+  # --- models ----------------------------------------------------------------
+  - package-ecosystem: pip
+    directory: /models
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    labels: [dependencies, models]
+    commit-message:
+      prefix: "chore(models)"
+    ignore:
+      # torch se sube a mano: cambiar de versión invalida los pesos entrenados y
+      # obliga a re-verificar la reproducibilidad bit a bit.
+      - dependency-name: torch
+      - dependency-name: torchvision
+    groups:
+      science:
+        patterns: ["numpy", "scipy", "astropy*", "sep", "astroalign", "reproject", "photutils"]
+
+  # --- infra -----------------------------------------------------------------
+  - package-ecosystem: pip
+    directory: /infra
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: [dependencies, infra]
+    commit-message:
+      prefix: "chore(infra)"
+    groups:
+      cdk:
+        patterns: ["aws-cdk-lib", "constructs", "cdk-nag"]
+
+  - package-ecosystem: npm
+    directory: /infra
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    labels: [dependencies, infra]
+    commit-message:
+      prefix: "chore(infra)"
+
+  # --- frontend --------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, frontend]
+    commit-message:
+      prefix: "chore(frontend)"
+    groups:
+      nuxt:
+        patterns: ["nuxt", "@nuxt/*", "vue", "vue-router", "@vue/*", "pinia*"]
+      tailwind:
+        patterns: ["tailwindcss", "@tailwindcss/*", "shadcn*", "radix*"]
+      dev:
+        dependency-type: development
+
+  # --- imágenes de contenedor ------------------------------------------------
+  - package-ecosystem: docker
+    directories: ["/backend", "/models"]
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: [dependencies, docker]
+    commit-message:
+      prefix: "chore(docker)"
