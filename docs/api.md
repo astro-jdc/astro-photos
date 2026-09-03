@@ -10,6 +10,25 @@ Errores: RFC 9457 `application/problem+json`
 (`{type, title, status, detail, instance, errors[]}`).
 
 Paginación: cursor. `?limit=50&cursor=<opaco>` → `{items: [...], next_cursor: str|null}`.
+**No hay total.** Es deliberado: contar con filtros geoespaciales y de embedding sobre
+millones de filas es caro y el número envejece mal. La UI dice "N cargadas", no
+"N encontradas". Si algún día hace falta un total, será estimado y con ese nombre.
+
+### Ofuscación de la ubicación
+
+Toda respuesta que incluya una foto aplica `photos.location_precision` **en el
+serializador**, nunca en la query. El cliente no reimplementa esto:
+
+| `location_precision` | qué devuelve `location` | `location_label` |
+|---|---|---|
+| `exact` | lat/lon reales y `accuracy_m` | topónimo si se conoce |
+| `city` | lat/lon redondeadas a 0.1° (~11 km) | ciudad, país |
+| `country` | centroide del país | país |
+| `hidden` | `null` | `null` |
+
+Si `country_code` es desconocido, `country` degrada a `hidden`: nunca se inventa un
+centroide. La ofuscación se aplica también al EXIF del fichero servido, a la preview
+y al resultado de una reconstrucción.
 
 ---
 
@@ -39,9 +58,14 @@ Paginación: cursor. `?limit=50&cursor=<opaco>` → `{items: [...], next_cursor:
 El evento `s3:ObjectCreated` sobre `staging/` dispara además una Lambda de
 verificación (tamaño, magic bytes, antivirus) que pone `quarantined` si algo no cuadra.
 
+Cuando la subida es multipart, el cliente cierra con
+`POST /photos/{id}/uploads/complete-multipart` → `{upload_id, parts: [{part_number, etag}]}`,
+que llama a `CompleteMultipartUpload` en S3 y deja la foto lista para el paso 3.
+Sin esta llamada el objeto queda incompleto y la regla de ciclo de vida lo borra.
+
 | método | ruta | descripción |
 |---|---|---|
-| `GET` | `/photos/{id}` 🔓 | metadata completa (la ubicación se ofusca según `location_precision`) |
+| `GET` | `/photos/{id}` 🔓 | metadata completa, con la ubicación ya ofuscada |
 | `PATCH` | `/photos/{id}` | edita metadata. Mientras `license_locked_at` sea NULL la licencia se cambia libremente; una vez fijado, solo puede **relajarse** (bajar de restrictividad). Ver `docs/licensing.md`. |
 | `DELETE` | `/photos/{id}` | soft-delete; rechazado con 409 si la foto participa en reconstrucciones publicadas |
 | `GET` | `/photos/{id}/download` | 302 a URL de CloudFront firmada; incrementa `download_count` y audita |
@@ -62,14 +86,19 @@ verificación (tamaño, magic bytes, antivirus) que pone `quarantined` si algo n
 &min_quality=0.6
 &tracked=true
 &sort=quality|recent|nearest
+&owner=<uuid>                fotos de un usuario ("mis fotos")
 ```
 
 `GET /photos/similar/{id}` 🔓 — vecinos por embedding (pgvector HNSW).
 
-`GET /objects` 🔓 / `GET /objects/{id}` 🔓 — catálogo, con `photo_count` y
+`GET /objects?q=<texto>` 🔓 / `GET /objects/{id}` 🔓 — catálogo con búsqueda por nombre
+o alias (el autocompletado del formulario de subida usa `q`), con `photo_count` y
 `reconstruction_count`. `GET /objects/{id}/coverage` 🔓 devuelve el **mapa de
 cobertura**: cuántas fotos hay por celda de tiempo × latitud × focal. Es lo que
-alimenta el widget "a este objeto le faltan tomas desde el hemisferio sur".
+alimenta el widget "a este objeto le faltan tomas desde el hemisferio sur". Responde
+`{period_bin, lat_bin_size_deg, focal_bins_mm, cells: [{period, lat_bin, focal_bin, count, best_quality}],
+sites: [{lat, lon, count}], gaps: [{reason, description}]}`. Los puntos de `sites`
+vienen **ya ofuscados** por la precisión de cada foto.
 
 ## Reconstrucciones
 
@@ -85,16 +114,70 @@ alimenta el widget "a este objeto le faltan tomas desde el hemisferio sur".
 | `GET` | `/reconstructions` 🔓 | galería pública de reconstrucciones |
 
 `POST /reconstructions` responde **202** con `Location: /api/v1/reconstructions/{id}`.
-Rate limit: 5 jobs en cola por usuario, 20 al día (config por entorno).
+Rate limit: 5 jobs en cola por usuario, 20 al día (config por entorno). Los límites
+vigentes viajan en `GET /me` dentro de `quota`, para que el cliente pueda deshabilitar
+el botón en vez de descubrirlo con un 429.
+
+`GET /reconstructions` acepta `?object_id=<uuid>` y `?mine=true`.
+
+Una reconstrucción de **una sola foto** se rechaza con 422: no es una reconstrucción.
+
+### Formas de respuesta
+
+`POST /reconstructions/preview` — el cliente **debe** llamar a esto antes de dejar
+lanzar nada, y enseñar lo que devuelve:
+
+```jsonc
+{
+  "selected": [{"photo_id", "weight", "quality_score", "fwhm_arcsec", "pixel_scale_arcsec"}],
+  "blocked":  [{"photo_id", "reason"}],   // reason: license_nd | license_arr |
+                                          // derivatives_opt_out | unsolved | too_low_quality
+  "resulting_license": "CC-BY-NC-4.0",
+  "estimated_compute_seconds": 420,
+  "estimated_queue_seconds": 180,         // arranque en frío de Batch spot
+  "estimated_cost_usd": 0.31,
+  "uses_learned_model": false             // si true, la UI exige AiDisclosure
+}
+```
+
+`GET /reconstructions/{id}/events` (SSE) — un evento por cambio de estado o de etapa:
+
+```jsonc
+{"status": "running", "progress": 0.42, "stage": "coadd",
+ "message": "Coadición óptima, 128/300 frames", "metrics": {...}, "at": "..."}
+```
+
+`GET /reconstructions/{id}/result` 🔓:
+
+```jsonc
+{
+  "result_url", "preview_url", "uncertainty_map_url", "weight_map_url",
+  "provenance_json_url", "attribution_md_url",
+  "best_single_frame": {"photo_id", "preview_url", "fwhm_arcsec", "snr_estimate"},
+  "metrics": {"fwhm_arcsec", "snr_gain_db", "effective_pixel_scale", "input_count"},
+  "license", "pipeline", "pipeline_version", "model_id"
+}
+```
+
+`best_single_frame` no es un extra: es la **comparación honesta**. Sin ella el usuario
+no puede juzgar si la reconstrucción aportó algo, y la interfaz estaría afirmando una
+mejora que no enseña.
 
 ## Modelos 🔓 (lectura)
 
 `GET /models`, `GET /models/{id}` (model card, métricas, dataset snapshot).
 `POST /models/{id}/activate` — solo `admin`.
 
+## Estadísticas 🔓
+
+`GET /stats` → `{photo_count, object_count, reconstruction_count, contributor_count,
+total_exposure_seconds}`. Alimenta los contadores de la portada. Cacheado 5 minutos.
+
 ## Licencias 🔓
 
-`GET /licenses` — catálogo con flags.
+`GET /licenses` — catálogo: `[{code, name, version, url, allows_commercial,
+allows_derivatives, requires_attribution, requires_sharealike, restrictiveness, spdx_id}]`,
+la tabla `licenses` de `docs/data-model.md` tal cual.
 `POST /licenses/resolve` → `{photo_ids[]}` → `{resulting_license, blocked: [{photo_id, reason}]}`.
 Es la misma función de dominio que usa el motor de reconstrucción; se expone para
 que el frontend pueda avisar antes de dejar pulsar el botón.

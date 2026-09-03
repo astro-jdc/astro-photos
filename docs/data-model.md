@@ -25,7 +25,7 @@ observador se guardan aparte porque importan para el airmass y la rotación de c
 | `default_license` | license_code NOT NULL DEFAULT `'CC-BY-NC-4.0'` | preferencia del usuario |
 | `role` | user_role NOT NULL DEFAULT `'member'` | `member \| curator \| admin` |
 | `storage_quota_bytes` | bigint NOT NULL DEFAULT 21474836480 | 20 GiB por defecto |
-| `storage_used_bytes` | bigint NOT NULL DEFAULT 0 | mantenido por trigger |
+| `storage_used_bytes` | bigint NOT NULL DEFAULT 0 | mantenido por trigger sobre `photos`: suma `original_bytes` de las fotos no borradas. El soft-delete **libera** cuota |
 | `is_active` | boolean NOT NULL DEFAULT true | |
 
 ## `photos`
@@ -60,6 +60,7 @@ La entidad central. Una fila = una exposición subida por un usuario.
 | `location_accuracy_m` | real | |
 | `elevation_m` | real | altitud sobre el nivel del mar |
 | `location_source` | location_source | `exif_gps \| user_pin \| named_site \| undisclosed` |
+| `country_code` | char(2) | ISO 3166-1; necesario para la precisión `country`. Si es NULL, `country` degrada a `hidden` |
 | `location_precision` | location_precision | `exact \| city \| country \| hidden` — privacidad del autor |
 | `site_id` | uuid → observing_sites | NULL si es una ubicación puntual |
 | **Óptica y cámara** | | |
@@ -86,6 +87,7 @@ La entidad central. Una fila = una exposición subida por un usuario.
 | `orientation_deg` | real | ángulo de posición |
 | `parity` | smallint | +1 / -1 |
 | `wcs_json` | jsonb | WCS completo (CTYPE/CRVAL/CRPIX/CD) para reproyección |
+| `dither_phase_x` / `dither_phase_y` | real | fase sub-píxel derivada del WCS, en [0,1). Es lo que mide la **diversidad de muestreo**: `selection.py` la maximiza porque sin dither diverso no hay super-resolución que recuperar |
 | `astrometry_job_id` | text | referencia al job de astrometry.net / ASTAP |
 | **Calidad** (worker de QA de imagen) | | |
 | `fwhm_arcsec` | real | seeing efectivo medido sobre las estrellas |
@@ -108,6 +110,7 @@ La entidad central. Una fila = una exposición subida por un usuario.
 | `embedding` | vector(768) | pgvector; búsqueda visual por similitud |
 | `view_count` / `download_count` | bigint | |
 | `exif_raw` | jsonb | EXIF/XMP crudo tal cual, para poder reprocesar |
+| `deleted_at` | timestamptz | soft-delete. Libera cuota del propietario, pero la foto sigue sirviendo a las reconstrucciones publicadas que la usaron |
 
 Índices: GIST sobre `location`, BTREE sobre `(object_id, captured_at_utc)`,
 BTREE sobre `(ra_deg, dec_deg)`, HNSW sobre `embedding`,
@@ -119,6 +122,7 @@ Catálogo canónico de objetos (Messier, NGC/IC, Caldwell, planetas, cometas).
 `id`, `catalog` (`M`,`NGC`,`IC`,`SH2`,`solar`), `catalog_number`, `common_name`,
 `common_name_es`, `object_type` (galaxy/nebula/cluster/planet/comet/moon/other),
 `ra_deg`, `dec_deg`, `magnitude`, `size_arcmin`, `aliases text[]`.
+`catalog` admite `M`, `NGC`, `IC`, `C` (Caldwell), `SH2` y `solar`.
 Se siembra desde OpenNGC (CC-BY-SA-4.0). Los objetos móviles (planetas, cometas)
 tienen `is_ephemeral=true` y no llevan RA/Dec fijas.
 
@@ -146,11 +150,16 @@ Un trabajo de reconstrucción: N fotos de entrada → 1 imagen de salida.
 | `model_id` | uuid → models | NULL en pipelines puramente clásicos |
 | `params` | jsonb | parámetros efectivos (drizzle pixfrac, kernel, rechazo…) |
 | `status` | job_status | `queued \| running \| succeeded \| failed \| cancelled` |
+| `progress` | real | 0–1, lo publica el SSE |
+| `idempotency_key` | text | UNIQUE por `requested_by`; evita duplicar un job al reintentar |
+| `is_public` | boolean NOT NULL DEFAULT true | si aparece en la galería pública |
 | `batch_job_id` | text | id del job en AWS Batch |
 | `input_count` | int | |
 | `s3_key_result` | text | salida a resolución completa (TIFF 32-bit + FITS con WCS) |
 | `s3_key_preview` | text | |
 | `s3_key_report` | text | informe HTML con métricas y contribuciones |
+| `s3_key_attribution` | text | `ATTRIBUTION.md` |
+| `s3_key_provenance` | text | `provenance.json` firmado |
 | `metrics` | jsonb | `fwhm_arcsec`, `snr_gain_db`, `effective_pixel_scale`, `psnr`, `ssim` |
 | `license` | license_code | **la más restrictiva** de todas las entradas (ver abajo) |
 | `error_message` | text | |
@@ -162,7 +171,8 @@ Un trabajo de reconstrucción: N fotos de entrada → 1 imagen de salida.
 Procedencia. **Cada foto que entra en una reconstrucción deja fila aquí para siempre.**
 `reconstruction_id`, `photo_id`, `weight` (contribución efectiva 0–1),
 `was_rejected` (boolean) + `rejection_reason`, `alignment_rms_px`,
-`snapshot_license` (la licencia de la foto *en el momento* de usarla).
+`snapshot_license` y `snapshot_attribution_name` (licencia y autoría de la foto *en el
+momento* de usarla — un cambio posterior no reescribe una reconstrucción publicada).
 
 ## `models`
 
