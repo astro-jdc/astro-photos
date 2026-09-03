@@ -1,0 +1,160 @@
+# Tier A — the full classical pipeline of section 9 of
+# docs/research/multi-image-astro-reconstruction.md.
+#
+# Ingest and linearise -> calibrate -> plate solve -> characterise (PSF, sky,
+# variance) -> common tangent plane -> flux-conserving reprojection ->
+# Zackay & Ofek proper coaddition -> audit -> deliver.
+#
+# Everything here runs on a laptop with no GPU and no AWS.
+
+pipeline: classical-stack-v1
+pipeline_api_version: "1"
+seed: 20240101
+description: >
+  Physically correct classical coaddition. Weights follow Zackay & Ofek
+  (ApJ 836:187/188): each frame is matched-filtered with its own PSF and
+  weighted by transparency over variance. Output is linear 32-bit FITS with
+  weight map, uncertainty map and effective PSF.
+
+defaults:
+  channel: G
+
+outputs:
+  fits: coadd.fits
+  preview: preview.png
+
+stages:
+  - id: load
+    op: io.load
+    description: RAW/FITS/TIFF/JPEG -> linear float32, one channel per frame.
+    params:
+      channel: G
+      estimate_jpeg_gamma: true
+
+  - id: masters
+    op: calibrate.masters
+    needs: [load]
+    description: Bias/dark/flat, when the contributor supplied them.
+    params:
+      bias_dir: null
+      dark_dir: null
+      flat_dir: null
+      flat_floor: 0.2
+
+  - id: background
+    op: calibrate.background
+    needs: [masters]
+    description: >
+      Spatially varying sky (light pollution). Must run before any weighting:
+      sigma_j is meaningless while a gradient is still in the frame.
+    params:
+      box_size: null      # auto: ~1/8 of the frame
+      filter_size: 3
+      sigma: 3.0
+      keep_pedestal: false
+
+  - id: cosmic
+    op: calibrate.cosmic_rays
+    needs: [background]
+    description: L.A.Cosmic (van Dokkum 2001). Flags, never interpolates.
+    params:
+      sigclip: 4.5
+      objlim: 5.0
+      max_iter: 4
+
+  - id: solve
+    op: align.platesolve
+    needs: [cosmic]
+    description: >
+      Local astrometry.net, seeded by the EXIF pixel-scale prior. Switch
+      solver to "astap" for speed, or "noop" for already-solved FITS and for
+      tests. Unsolvable frames are rejected, with the reason recorded.
+    params:
+      solver: noop
+      scale_tolerance: 0.25
+      on_failure: reject
+
+  - id: characterise
+    op: align.characterise
+    needs: [solve]
+    description: >
+      Sources with sep; PSF fitted to the measured moments (Moffat by
+      default, photutils ePSF available as `epsf`); FWHM/ellipticity/
+      orientation mapped over the field, because a single global PSF is wrong
+      for alt-az field rotation and for differential chromatic refraction;
+      airmass from the solved centre.
+    params:
+      threshold_sigma: 5.0
+      min_area: 5
+      field_grid: [3, 3]
+      epsf_size: 25
+      # Analytic Moffat by default: on sparse fields photutils' ePSF is noisy
+      # and, worse, succeeds on some frames and not others, leaving the coadd
+      # to combine PSFs measured two different ways. Switch to `epsf` only on
+      # crowded fields, and check psf_source on every frame afterwards.
+      psf_model: moffat
+
+  - id: grid
+    op: align.output_grid
+    needs: [characterise]
+    description: >
+      Common tangent plane. The scale comes from the 25th percentile of the
+      contributing scales, and oversampling is granted only when the measured
+      sub-pixel dither diversity supports it.
+    params:
+      pixel_scale_arcsec: null
+      scale_percentile: 25.0
+      max_oversample: 1.0
+
+  - id: register
+    op: align.register
+    needs: [characterise, grid]
+    description: >
+      reproject_adaptive (DeForest 2004) with conserve_flux, cross-validated
+      against independent star matching. Frames whose registration RMS exceeds
+      the threshold are rejected rather than smeared into the coadd.
+    params:
+      method: adaptive
+      conserve_flux: true
+      kernel: gaussian
+      cross_validate: true
+      max_rms_px: 1.5
+
+  - id: coadd
+    op: stack.optimal
+    needs: [register]
+    description: Zackay & Ofek proper coaddition with per-image matched filter.
+    params:
+      epsilon: 0.0001
+      reject: true
+      sigma_low: 5.0
+      sigma_high: 3.0
+      reject_trails: true
+      psf_output_size: 33
+
+  - id: metrics
+    op: metrics.evaluate
+    needs: [coadd, register]
+    description: Measured FWHM, SNR gain against the sigma-clipped-mean baseline.
+    params:
+      baseline_method: sigma-clip
+      threshold_sigma: 5.0
+
+  - id: audit
+    op: metrics.injection_audit
+    needs: [register]
+    description: >
+      Inject sources of known flux and measure the recovery curve. Slope must
+      be ~1: anything else means the pipeline loses or invents flux.
+    params:
+      n_sources: 25
+      detection_threshold: 5.0
+      combiner: optimal
+
+  - id: write
+    op: io.write
+    needs: [coadd, metrics, audit]
+    params:
+      fits_name: coadd.fits
+      preview_name: preview.png
+      write_preview: true

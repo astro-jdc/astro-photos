@@ -1,0 +1,104 @@
+# Tier A, drizzle variant — Fruchter & Hook (2002).
+#
+# Use this when the contributions are UNDERSAMPLED (short focal length, coarse
+# pixels: a 50 mm lens on 4 um pixels gives ~16 arcsec/pixel against a ~2
+# arcsec optical limit) and when they carry genuine sub-pixel diversity.
+#
+# The output grid is allowed to go finer than the inputs, but only up to the
+# oversampling that the MEASURED dither diversity supports. If the dither
+# score is poor the grid stays at the input scale, because upsampling without
+# diversity is interpolation, not super-resolution, and this project does not
+# ship interpolation labelled as super-resolution.
+#
+# Note that drizzle resamples the NATIVE frames directly: there is no
+# align.register stage, because reprojecting first and drizzling second would
+# resample the data twice.
+
+pipeline: drizzle-v1
+pipeline_api_version: "1"
+seed: 20240101
+description: >
+  Flux-conserving variable-pixel linear reconstruction onto a finer grid,
+  recovering the sampling that aliasing destroyed in individual frames.
+
+defaults:
+  channel: G
+
+outputs:
+  fits: drizzle.fits
+  preview: preview.png
+
+stages:
+  - id: load
+    op: io.load
+    params:
+      channel: G
+
+  - id: masters
+    op: calibrate.masters
+    needs: [load]
+    params:
+      flat_floor: 0.2
+
+  - id: background
+    op: calibrate.background
+    needs: [masters]
+    params:
+      box_size: null
+      sigma: 3.0
+
+  - id: cosmic
+    op: calibrate.cosmic_rays
+    needs: [background]
+    params:
+      sigclip: 4.5
+      objlim: 5.0
+
+  - id: solve
+    op: align.platesolve
+    needs: [cosmic]
+    params:
+      solver: noop
+      on_failure: reject
+
+  - id: characterise
+    op: align.characterise
+    needs: [solve]
+    params:
+      threshold_sigma: 5.0
+      psf_model: moffat
+
+  - id: grid
+    op: align.output_grid
+    needs: [characterise]
+    description: >
+      max_oversample 2.0: the grid may go up to 2x finer, but only if the
+      dither score earns it.
+    params:
+      scale_percentile: 25.0
+      max_oversample: 2.0
+
+  - id: coadd
+    op: stack.drizzle
+    needs: [characterise, grid]
+    description: >
+      pixfrac 0.7 sits in the 0.6-0.8 band the research note recommends: small
+      enough to sharpen, large enough to avoid holes at realistic dither
+      counts. Check hole_fraction in the metrics before trusting the result.
+    params:
+      pixfrac: 0.7
+      subsample: 5
+      weighting: uniform
+
+  - id: metrics
+    op: metrics.evaluate
+    needs: [coadd, characterise]
+    params:
+      threshold_sigma: 5.0
+
+  - id: write
+    op: io.write
+    needs: [coadd, metrics]
+    params:
+      fits_name: drizzle.fits
+      preview_name: preview.png

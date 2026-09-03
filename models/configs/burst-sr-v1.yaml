@@ -1,0 +1,125 @@
+# Tier B — learned burst super-resolution as an OPTIONAL layer on top of the
+# Tier A coadd, never as a replacement for it.
+#
+# Read this before running it:
+#
+# * The Tier A coadd is still produced, still written, and is still the
+#   scientific product. `enhanced.fits` is an extra file, flagged AIGEN=T,
+#   carrying a per-pixel uncertainty map and a prior-contribution number.
+# * `weights:` must point at a trained checkpoint from the `models` table.
+#   With no weights the stage refuses to run: an untrained network would emit
+#   structure that is pure prior, and in astronomy a hallucinated point source
+#   is a false discovery.
+# * The alignment module of RBSR/Burstormer has been DELETED and replaced by
+#   WCS-driven warping. We know the geometry to sub-pixel accuracy from the
+#   plate solution, which beats any learned optical flow on this data.
+# * Requires the [torch] extra. Everything before the sr.enhance stage runs
+#   without it.
+
+pipeline: burst-sr-v1
+pipeline_api_version: "1"
+seed: 20240101
+description: >
+  Tier A classical coadd plus an optional, clearly-labelled learned
+  enhancement (WCS-warped recurrent burst SR with physical conditioning).
+
+defaults:
+  channel: G
+
+outputs:
+  fits: coadd.fits
+  preview: preview.png
+  enhanced: enhanced.fits
+
+stages:
+  - id: load
+    op: io.load
+    params:
+      channel: G
+
+  - id: background
+    op: calibrate.background
+    needs: [load]
+    params:
+      sigma: 3.0
+
+  - id: cosmic
+    op: calibrate.cosmic_rays
+    needs: [background]
+    params:
+      sigclip: 4.5
+
+  - id: solve
+    op: align.platesolve
+    needs: [cosmic]
+    params:
+      solver: noop
+      on_failure: reject
+
+  - id: characterise
+    op: align.characterise
+    needs: [solve]
+    params:
+      threshold_sigma: 5.0
+      psf_model: moffat
+
+  - id: grid
+    op: align.output_grid
+    needs: [characterise]
+    params:
+      scale_percentile: 25.0
+      max_oversample: 1.0
+
+  - id: register
+    op: align.register
+    needs: [characterise, grid]
+    params:
+      method: adaptive
+      conserve_flux: true
+      cross_validate: true
+
+  - id: coadd
+    op: stack.optimal
+    needs: [register]
+    description: The measurement. This is what science uses.
+    params:
+      epsilon: 0.0001
+      reject: true
+
+  - id: enhance
+    op: sr.enhance
+    needs: [coadd, characterise, grid]
+    description: >
+      The inference. Optional, labelled, uncertainty-mapped. Set `weights` to
+      the S3-backed checkpoint recorded in the `models` table.
+    params:
+      architecture: wcs-burst
+      scale: 2.0
+      weights: null
+      device: null
+      allow_untrained: false
+      options:
+        channels: 64
+        n_blocks: 6
+
+  - id: metrics
+    op: metrics.evaluate
+    needs: [coadd, register]
+    params:
+      baseline_method: sigma-clip
+
+  - id: audit
+    op: metrics.injection_audit
+    needs: [register]
+    description: Mandatory for any run that produces a learned output.
+    params:
+      n_sources: 25
+      detection_threshold: 5.0
+      combiner: optimal
+
+  - id: write
+    op: io.write
+    needs: [coadd, enhance, metrics, audit]
+    params:
+      fits_name: coadd.fits
+      preview_name: preview.png
