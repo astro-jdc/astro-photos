@@ -1,7 +1,11 @@
 # Entorno de desarrollo local. `make up` / `make down`.
 services:
   db:
-    image: docker.io/postgis/postgis:16-3.4
+    # PostGIS + pgvector: ninguna imagen oficial trae las dos. Ver scripts/db.Dockerfile.
+    build:
+      context: ./scripts
+      dockerfile: db.Dockerfile
+    image: astro-photos/postgis-pgvector:16
     environment:
       POSTGRES_USER: astro
       POSTGRES_PASSWORD: astro
