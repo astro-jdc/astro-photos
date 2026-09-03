@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import structlog
 from botocore.exceptions import ClientError
@@ -16,6 +17,7 @@ from app.core.errors import (
     QuotaExceededError,
     UnprocessableError,
 )
+from app.core.uow import UnitOfWork
 from app.domain.licensing import enforce_stack_consent
 from app.models.enums import LocationSource, PhotoStatus, TimeSource
 from app.models.photo import Photo
@@ -53,6 +55,7 @@ class UploadService:
         storage: StorageService,
         queue: QueueService,
         settings: Settings,
+        uow: UnitOfWork | None = None,
     ) -> None:
         self.photos = photos
         self.users = users
@@ -60,6 +63,26 @@ class UploadService:
         self.storage = storage
         self.queue = queue
         self.settings = settings
+        self.uow = uow
+
+    async def _enqueue_after_commit(
+        self, queue_name: str, body: dict[str, Any], *, idempotency_key: str
+    ) -> None:
+        """Encola cuando la escritura sea durable.
+
+        Fuera de una petición HTTP (tests, scripts) no hay unidad de trabajo: se
+        encola en el momento, que es el comportamiento correcto ahí.
+        """
+
+        async def _send() -> None:
+            await self.queue.send(queue_name, body, idempotency_key=idempotency_key)
+            log.info("enqueued", queue=queue_name, key=idempotency_key)
+
+        if self.uow is not None:
+            self.uow.after_commit(_send)
+        else:
+            # Sin petición HTTP no hay commit diferido que esperar.
+            await _send()
 
     # ------------------------------------------------------------------ #
     async def create_upload(self, *, user: User, request: UploadRequestIn) -> UploadTicketOut:
@@ -384,7 +407,9 @@ class UploadService:
                 "allow_derivatives_in_stacks": photo.allow_derivatives_in_stacks,
             },
         )
-        await self.queue.send(
+        # Después del commit, nunca antes: un mensaje que apunte a una fila que la
+        # transacción no llegó a confirmar revienta al worker de ingesta.
+        await self._enqueue_after_commit(
             self.settings.sqs_queue_ingest,
             {
                 "type": "ingest",
@@ -396,5 +421,4 @@ class UploadService:
             },
             idempotency_key=f"ingest:{photo.id}",
         )
-        log.info("photo_ingest_enqueued", photo_id=str(photo.id))
         return photo

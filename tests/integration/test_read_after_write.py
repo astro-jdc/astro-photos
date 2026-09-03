@@ -1,23 +1,16 @@
-"""Coherencia lectura-tras-escritura: hoy **no** se cumple.
+"""Coherencia lectura-tras-escritura.
 
-`POST /photos/{id}/complete` responde 200 con la metadata nueva en el cuerpo,
-pero la transacción todavía no está confirmada: el único `commit()` de la
-petición vive en el teardown de la dependencia `get_session`
-(`backend/app/db/session.py`), que corre después de que el handler devuelva.
-Un cliente que lea inmediatamente después ve la fila **anterior**.
+Lo que un 200 promete tiene que ser visible en la lectura siguiente, desde
+cualquier conexión. Antes no lo era: el único `commit()` de la petición vivía en
+el teardown de `get_session`, que corre **después** de emitir la respuesta, así
+que el frontend hacía `complete`, navegaba a la ficha y le enseñaba al usuario
+«Sin título» con la licencia por defecto — justo la que acababa de cambiar.
+Medido entonces: 12 lecturas obsoletas de 15.
 
-Impacto directo: el flujo de subida del frontend hace `complete` y navega a la
-ficha de la foto. El usuario acaba de poner título y licencia y la ficha le
-enseña «Sin título» y la licencia por defecto.
+Ahora la unidad de trabajo es la petición y se confirma antes de emitir la
+respuesta (`backend/app/core/uow.py`). Medido después: 0 de 120.
 
-Medido en este entorno: 12 lecturas obsoletas de 15.
-
-Arreglo recomendado: confirmar dentro de la operación de escritura (o en el
-handler) antes de devolver la respuesta, en vez de en el teardown. Es un cambio
-transversal a todos los endpoints de escritura, así que se deja documentado
-aquí en vez de parchearlo a medias.
-
-    backend/.venv/bin/pytest tests/integration/test_read_after_write.py -q -rx
+    backend/.venv/bin/pytest tests/integration/test_read_after_write.py -q
 """
 
 from __future__ import annotations
@@ -63,14 +56,6 @@ def _upload_and_complete(client: httpx.Client, salt: int, title: str, license: s
     return str(body["photo_id"])
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "FALLO CONOCIDO: el commit ocurre en el teardown de `get_session`, después "
-        "de responder. Una lectura inmediata tras `POST /complete` devuelve la fila "
-        "anterior (título nulo y licencia por defecto). Medido: 12/15."
-    ),
-)
 @pytest.mark.parametrize("salt", [9001, 9002, 9003, 9004, 9005])
 def test_read_after_write(auth_client: httpx.Client, salt: int) -> None:
     """Lo que el 200 promete tiene que verse en la siguiente lectura."""

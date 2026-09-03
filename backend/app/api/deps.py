@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.core.errors import ForbiddenError, NotFoundError
 from app.core.security import AuthenticatedUser, Role, current_user, optional_user
+from app.core.uow import UnitOfWork, unit_of_work
 from app.db.session import get_session
 from app.models.user import User
 from app.repositories.audit import AuditRepository
@@ -34,6 +35,7 @@ __all__ = [
     "IdempotencyKey",
     "OptionalDbUser",
     "SettingsDep",
+    "UnitOfWorkDep",
     "get_object_service",
     "get_photo_service",
     "get_reconstruction_service",
@@ -42,6 +44,14 @@ __all__ = [
 ]
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def get_unit_of_work(request: Request) -> UnitOfWork:
+    """La unidad de trabajo de la petición, para registrar efectos post-commit."""
+    return unit_of_work(request)
+
+
+UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_unit_of_work)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 #: Cabecera de idempotencia de los POST que crean trabajo (regla dura 3).
@@ -168,8 +178,10 @@ async def get_upload_service(
     settings: SettingsDep,
     storage: Annotated[StorageService, Depends(get_storage)],
     queue: Annotated[QueueService, Depends(get_queue)],
+    uow: UnitOfWorkDep,
 ) -> UploadService:
     return UploadService(
+        uow=uow,
         photos=PhotoRepository(session),
         users=UserRepository(session),
         audit=AuditRepository(session),
@@ -183,8 +195,10 @@ async def get_reconstruction_service(
     session: DbSession,
     settings: SettingsDep,
     queue: Annotated[QueueService, Depends(get_queue)],
+    uow: UnitOfWorkDep,
 ) -> ReconstructionService:
     return ReconstructionService(
+        uow=uow,
         photos=PhotoRepository(session),
         reconstructions=ReconstructionRepository(session),
         objects=SkyObjectRepository(session),

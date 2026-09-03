@@ -33,9 +33,15 @@ class ReconstructionRepository:
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def add(self, reconstruction: Reconstruction) -> Reconstruction:
+        """Inserta y **hace flush**: así el UNIQUE de idempotencia salta aquí, antes
+        de que el servicio anuncie nada, y no al confirmar la transacción."""
         self.session.add(reconstruction)
         await self.session.flush()
         return reconstruction
+
+    async def rollback(self) -> None:
+        """Deshace la transacción en curso. Solo para recuperarse de un UNIQUE."""
+        await self.session.rollback()
 
     async def add_inputs(self, rows: list[ReconstructionInput]) -> None:
         """Procedencia: se escribe **antes** de encolar, nunca después."""

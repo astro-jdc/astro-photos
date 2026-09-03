@@ -141,23 +141,33 @@ def test_las_rutas_publicas_no_exigen_autenticacion(client, route: str) -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECTO CONOCIDO: `optional_user` comparte el `bearer_scheme` con "
-        "`current_user`, así que FastAPI anota las rutas 🔓 con "
-        "`security: [{Bearer: []}]`. Funcionan sin token, pero el OpenAPI dice "
-        "lo contrario y cualquier cliente generado se lo cree. Arreglarlo pide "
-        "un esquema de seguridad aparte para el usuario opcional."
-    ),
-)
 @pytest.mark.parametrize("route", ["/licenses", "/photos", "/reconstructions"])
-def test_el_openapi_no_deberia_marcar_como_privadas_las_rutas_publicas(
+def test_el_openapi_no_marca_como_privadas_las_rutas_publicas(
     openapi: dict, route: str
 ) -> None:
-    """El OpenAPI debe declarar públicas las rutas que `docs/api.md` marca 🔓."""
+    """El OpenAPI debe declarar públicas las rutas que `docs/api.md` marca 🔓.
+
+    Se aceptan las dos formas correctas de decirlo, y solo esas:
+
+    * sin `security` (o vacío) — la ruta ignora por completo la autenticación;
+    * `security: [{}, {"Bearer": []}]` — el requisito vacío `{}` es el idioma de
+      OpenAPI para «opcional»: se puede llamar con token o sin él.
+
+    La segunda es la que usan estas rutas, y no por capricho: **el token cambia la
+    respuesta**. El autor de una foto ve sus coordenadas exactas y cualquier otro las
+    ve ofuscadas. Si el OpenAPI dijera «aquí no hay autenticación», un cliente
+    generado no mandaría nunca la cabecera y el autor dejaría de ver sus propios
+    datos sin que nada fallara visiblemente.
+
+    Lo que sigue estando prohibido es `security: [{"Bearer": []}]` a secas, que es el
+    defecto original: dice «hace falta token» en una ruta pública.
+    """
     operation = openapi["paths"][f"/api/v1{route}"]["get"]
-    assert not operation.get("security"), (
+    security = operation.get("security")
+    if not security:
+        return
+    assert {} in security, (
         f"GET {route} es 🔓 en `docs/api.md` pero el OpenAPI declara "
-        f"security={operation.get('security')}."
+        f"security={security}, que un cliente generado lee como «token obligatorio». "
+        "Para autenticación opcional falta el requisito vacío `{}`."
     )

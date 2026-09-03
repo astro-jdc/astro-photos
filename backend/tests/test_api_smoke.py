@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,40 +25,107 @@ from app.core.security import current_user, optional_user
 from app.db.session import get_session
 from app.main import create_app
 
-#: Las rutas del contrato, con el método y si necesitan token.
-CONTRACT_ROUTES: list[tuple[str, str]] = [
-    ("GET", "/me"),
-    ("PATCH", "/me"),
-    ("GET", "/users/{user_id}"),
-    ("POST", "/photos/uploads"),
-    ("POST", "/photos/{photo_id}/complete"),
-    ("POST", "/photos/{photo_id}/uploads/complete-multipart"),
-    ("DELETE", "/photos/{photo_id}/uploads"),
-    ("GET", "/photos"),
-    ("GET", "/photos/{photo_id}"),
-    ("PATCH", "/photos/{photo_id}"),
-    ("DELETE", "/photos/{photo_id}"),
-    ("GET", "/photos/{photo_id}/download"),
-    ("GET", "/photos/similar/{photo_id}"),
-    ("GET", "/objects"),
-    ("GET", "/objects/{object_id}"),
-    ("GET", "/objects/{object_id}/coverage"),
-    ("POST", "/reconstructions/preview"),
-    ("POST", "/reconstructions"),
-    ("GET", "/reconstructions"),
-    ("GET", "/reconstructions/{reconstruction_id}"),
-    ("GET", "/reconstructions/{reconstruction_id}/events"),
-    ("GET", "/reconstructions/{reconstruction_id}/inputs"),
-    ("GET", "/reconstructions/{reconstruction_id}/result"),
-    ("DELETE", "/reconstructions/{reconstruction_id}"),
-    ("GET", "/models"),
-    ("GET", "/models/{model_id}"),
-    ("POST", "/models/{model_id}/activate"),
-    ("GET", "/stats"),
-    ("GET", "/licenses"),
-    ("POST", "/licenses/resolve"),
-    ("GET", "/healthz"),
-    ("GET", "/readyz"),
+SAMPLE_UUID = "22222222-2222-2222-2222-222222222222"
+OTHER_UUID = "33333333-3333-3333-3333-333333333333"
+
+
+@dataclass(frozen=True)
+class ContractRoute:
+    """Una fila del contrato, invocable."""
+
+    method: str
+    path: str
+    ok: frozenset[int] | set[int] = field(default_factory=lambda: {200})
+    body: dict[str, Any] | None = None
+
+    @property
+    def url(self) -> str:
+        """La plantilla con los parámetros de path ya sustituidos."""
+        path = self.path
+        for name in (
+            "user_id",
+            "photo_id",
+            "object_id",
+            "reconstruction_id",
+            "model_id",
+        ):
+            path = path.replace("{" + name + "}", SAMPLE_UUID)
+        return f"/api/v1{path}"
+
+    def __str__(self) -> str:  # pragma: no cover - solo para el id del test
+        return f"{self.method} {self.path}"
+
+
+#: Cada ruta del contrato con: método, plantilla de path, cuerpo válido (si lo
+#: necesita) y los códigos aceptables contra una base vacía.
+#:
+#: Los códigos **no** son decorativos. Comprobar que una ruta está registrada no
+#: comprueba que responda: una tabla de rutas pasaría igual con todos los handlers
+#: sustituidos por `raise`. Por eso cada entrada se invoca de verdad y se exige un
+#: código concreto; cualquier 5xx es un fallo.
+CONTRACT_ROUTES: list[ContractRoute] = [
+    ContractRoute("GET", "/me", ok={200}),
+    ContractRoute("PATCH", "/me", body={"bio": "hola"}, ok={200}),
+    ContractRoute("GET", "/users/{user_id}", ok={404}),
+    ContractRoute(
+        "POST",
+        "/photos/uploads",
+        body={
+            "filename": "m31.jpg",
+            "size_bytes": 1024,
+            "mime_type": "image/jpeg",
+            "checksum_sha256": "a" * 64,
+        },
+        ok={201, 502},
+    ),
+    ContractRoute(
+        "POST",
+        "/photos/{photo_id}/complete",
+        body={"location_precision": "hidden"},
+        ok={404},
+    ),
+    ContractRoute(
+        "POST",
+        "/photos/{photo_id}/uploads/complete-multipart",
+        body={"upload_id": "u", "parts": [{"part_number": 1, "etag": "e"}]},
+        ok={404},
+    ),
+    ContractRoute("DELETE", "/photos/{photo_id}/uploads", ok={404}),
+    ContractRoute("GET", "/photos", ok={200}),
+    ContractRoute("GET", "/photos/{photo_id}", ok={404}),
+    ContractRoute("PATCH", "/photos/{photo_id}", body={"title": "x"}, ok={404}),
+    ContractRoute("DELETE", "/photos/{photo_id}", ok={404}),
+    ContractRoute("GET", "/photos/{photo_id}/download", ok={404}),
+    ContractRoute("GET", "/photos/similar/{photo_id}", ok={404}),
+    ContractRoute("GET", "/objects", ok={200}),
+    ContractRoute("GET", "/objects/{object_id}", ok={404}),
+    ContractRoute("GET", "/objects/{object_id}/coverage", ok={404}),
+    ContractRoute(
+        "POST",
+        "/reconstructions/preview",
+        body={"photo_ids": [SAMPLE_UUID, OTHER_UUID], "pipeline": "classical-stack-v1"},
+        ok={422},
+    ),
+    ContractRoute(
+        "POST",
+        "/reconstructions",
+        body={"photo_ids": [SAMPLE_UUID, OTHER_UUID], "pipeline": "classical-stack-v1"},
+        ok={422},
+    ),
+    ContractRoute("GET", "/reconstructions", ok={200}),
+    ContractRoute("GET", "/reconstructions/{reconstruction_id}", ok={404}),
+    ContractRoute("GET", "/reconstructions/{reconstruction_id}/events", ok={404}),
+    ContractRoute("GET", "/reconstructions/{reconstruction_id}/inputs", ok={404}),
+    ContractRoute("GET", "/reconstructions/{reconstruction_id}/result", ok={404}),
+    ContractRoute("DELETE", "/reconstructions/{reconstruction_id}", ok={404}),
+    ContractRoute("GET", "/models", ok={200}),
+    ContractRoute("GET", "/models/{model_id}", ok={404}),
+    ContractRoute("POST", "/models/{model_id}/activate", ok={403, 404}),
+    ContractRoute("GET", "/stats", ok={200}),
+    ContractRoute("GET", "/licenses", ok={200}),
+    ContractRoute("POST", "/licenses/resolve", body={"photo_ids": [SAMPLE_UUID]}, ok={200}),
+    ContractRoute("GET", "/healthz", ok={200}),
+    ContractRoute("GET", "/readyz", ok={200, 503}),
 ]
 
 
@@ -140,7 +208,7 @@ def client(app: FastAPI) -> Iterator[TestClient]:
 # --------------------------------------------------------------------------- #
 # Rutas
 # --------------------------------------------------------------------------- #
-def test_every_contract_route_exists(client: TestClient) -> None:
+def test_every_contract_route_is_registered(client: TestClient) -> None:
     """Ninguna ruta de ``docs/api.md`` puede faltar.
 
     Se comprueba sobre el OpenAPI y no sobre ``app.routes`` porque el OpenAPI **es**
@@ -152,8 +220,42 @@ def test_every_contract_route_exists(client: TestClient) -> None:
         for path, operations in paths.items()
         for method in operations
     }
-    missing = [entry for entry in CONTRACT_ROUTES if entry not in registered]
+    missing = [(r.method, r.path) for r in CONTRACT_ROUTES if (r.method, r.path) not in registered]
     assert missing == [], f"Rutas del contrato que faltan: {missing}"
+
+
+@pytest.mark.parametrize("route", CONTRACT_ROUTES, ids=str)
+def test_every_contract_route_actually_responds(client: TestClient, route: ContractRoute) -> None:
+    """Cada ruta del contrato **responde**, y con el código que le toca.
+
+    Estar registrada no es responder: una tabla de rutas pasaría igual con todos los
+    handlers sustituidos por ``raise``. Aquí se invoca cada una de verdad contra una
+    base vacía y se exige un código concreto; un 5xx es siempre un fallo.
+    """
+    response = client.request(route.method, route.url, json=route.body)
+
+    assert response.status_code < 500, (
+        f"{route} devolvió {response.status_code}. Ninguna ruta del contrato puede "
+        f"reventar con una base vacía: {response.text[:400]}"
+    )
+    assert response.status_code in route.ok, (
+        f"{route} devolvió {response.status_code} y se esperaba "
+        f"{sorted(route.ok)}: {response.text[:400]}"
+    )
+
+
+@pytest.mark.parametrize("route", CONTRACT_ROUTES, ids=str)
+def test_every_contract_error_is_problem_json(client: TestClient, route: ContractRoute) -> None:
+    """Regla dura 4: ningún error sale sin ``application/problem+json``."""
+    response = client.request(route.method, route.url, json=route.body)
+    if response.status_code < 400:
+        return
+    assert response.headers["content-type"].startswith(PROBLEM_CONTENT_TYPE), (
+        f"{route} devolvió {response.status_code} con "
+        f"content-type {response.headers.get('content-type')!r}"
+    )
+    body = response.json()
+    assert set(body) >= {"type", "title", "status", "detail"}
 
 
 def test_openapi_is_generated_and_is_31(client: TestClient) -> None:

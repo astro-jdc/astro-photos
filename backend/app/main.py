@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.openapi.utils import get_openapi
 
-from app.api.v1.router import api_router
+from app.api.v1.router import V1_ROUTERS, api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import PROBLEM_CONTENT_TYPE, install_error_handlers
 from app.core.logging import RequestContextMiddleware, configure_logging
+from app.core.uow import install_unit_of_work
 from app.db.session import dispose_engine
 from app.schemas.common import ProblemDetail
 
@@ -98,6 +101,66 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.info("shutdown")
 
 
+def _uses_only_optional_auth(route: Any) -> bool:
+    """¿Esta ruta acepta anónimos aunque sepa leer un Bearer si viene?
+
+    Recorre el árbol de dependencias buscando `current_user` (obligatorio) y
+    `optional_user` (opcional). Se hace por inspección y no con una lista escrita a
+    mano para que una ruta nueva no se quede fuera por olvido.
+    """
+    from app.core.security import current_user, optional_user
+
+    dependant = getattr(route, "dependant", None)
+    if dependant is None:
+        return False
+
+    found_optional = False
+    stack = [dependant]
+    seen: set[int] = set()
+    while stack:
+        node = stack.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        if node.call is current_user:
+            return False
+        if node.call is optional_user:
+            found_optional = True
+        stack.extend(node.dependencies)
+    return found_optional
+
+
+def _mark_optional_security(schema: dict[str, Any], prefix: str) -> None:
+    """Declara como **opcional** la autenticación de las rutas 🔓.
+
+    FastAPI anota el esquema Bearer en cuanto una ruta sabe leerlo, aunque sea con
+    `auto_error=False`. El resultado es un OpenAPI que dice "hace falta token" en
+    rutas públicas, y los clientes generados a partir de él exigen credenciales que
+    nadie pide. El idioma de OpenAPI para "opcional" es incluir el requisito vacío
+    `{}` junto al esquema: cualquiera de los dos sirve.
+    """
+    paths = schema.get("paths", {})
+    for router in V1_ROUTERS:
+        for route in router.routes:
+            _mark_route(paths, prefix, route)
+
+
+def _mark_route(paths: dict[str, Any], prefix: str, route: Any) -> None:
+    path = getattr(route, "path", None)
+    methods = getattr(route, "methods", None)
+    if not path or not methods or not _uses_only_optional_auth(route):
+        return
+    operations = paths.get(f"{prefix}{path}")
+    if operations:
+        for method in methods:
+            operation = operations.get(method.lower())
+            if operation is None:
+                continue
+            security = operation.get("security")
+            if security and {} not in security:
+                operation["security"] = [{}, *security]
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Construye la app. Recibe ``settings`` para poder instanciarla en tests."""
     cfg = settings or get_settings()
@@ -116,6 +179,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = cfg
 
+    # El **más interno** de todos, y por eso se añade primero: envuelve solo la
+    # ejecución del handler, así que confirma la transacción justo antes de que el
+    # `http.response.start` salga hacia el cliente. Ninguna otra capa puede colarse
+    # entre el commit y la respuesta.
+    install_unit_of_work(app)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
@@ -130,6 +199,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     install_error_handlers(app)
     app.include_router(api_router, prefix=cfg.api_prefix)
+
+    def custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            openapi_version=app.openapi_version,
+            description=app.description,
+            routes=app.routes,
+        )
+        _mark_optional_security(schema, cfg.api_prefix)
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]
     return app
 
 

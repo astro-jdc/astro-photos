@@ -684,3 +684,109 @@ async def test_publishing_an_unknown_job_is_a_404(settings: Settings) -> None:
                 s3_key_attribution="a.md",
             ),
         )
+
+
+# --------------------------------------------------------------------------- #
+# Idempotencia: la fila que la registra y el trabajo que protege, misma transacción
+# --------------------------------------------------------------------------- #
+class _RacingRepo(FakeReconstructionRepo):
+    """Simula que otra petición ganó la carrera por la misma `Idempotency-Key`.
+
+    El árbitro real es el `UNIQUE (requested_by, idempotency_key)` de Postgres, que
+    salta en el `flush` de `add()`. Aquí se reproduce ese salto.
+    """
+
+    def __init__(self, winner: Reconstruction) -> None:
+        super().__init__()
+        self.winner = winner
+        self.rollbacks = 0
+
+    async def add(self, job: Reconstruction) -> Reconstruction:
+        from sqlalchemy.exc import IntegrityError
+
+        raise IntegrityError("INSERT", {}, Exception("uq_reconstructions_idempotency"))
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+
+    async def get_by_idempotency_key(self, user_id: uuid.UUID, key: str) -> Reconstruction | None:
+        # La primera consulta (antes de insertar) no ve nada: por eso hay carrera.
+        # La segunda, tras el UNIQUE, ya ve el trabajo del ganador.
+        if self.rollbacks == 0:
+            return None
+        return self.winner
+
+
+async def test_a_race_on_the_idempotency_key_returns_the_winners_job(
+    fake_user: Any, settings: Settings
+) -> None:
+    """Dos peticiones con la misma clave: una crea, la otra devuelve la misma.
+
+    Es lo que promete la cabecera. Sin esto, la perdedora reventaría con un 500 por
+    violación de UNIQUE después de haber hecho todo el trabajo.
+    """
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 4)]
+    winner = _job("classical-stack-v1")
+    repo = _RacingRepo(winner)
+    queue = FakeQueue()
+    service = ReconstructionService(
+        photos=FakePhotoRepo(photos),  # type: ignore[arg-type]
+        reconstructions=repo,  # type: ignore[arg-type]
+        objects=FakeObjectRepo(),  # type: ignore[arg-type]
+        audit=FakeAudit(),  # type: ignore[arg-type]
+        queue=queue,
+        settings=settings,
+    )
+    job, created = await service.create(
+        user=fake_user, payload=payload(photos), idempotency_key="misma-clave"
+    )
+    assert created is False
+    assert job is winner
+    assert repo.rollbacks == 1
+    # Y no se encola un segundo mensaje para un trabajo que ya existe.
+    assert queue.sent == []
+
+
+async def test_a_unique_violation_without_an_idempotency_key_still_raises(
+    fake_user: Any, settings: Settings
+) -> None:
+    """Sin clave no hay nada que reintentar: el error no se puede tragar."""
+    from sqlalchemy.exc import IntegrityError
+
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 4)]
+    service = ReconstructionService(
+        photos=FakePhotoRepo(photos),  # type: ignore[arg-type]
+        reconstructions=_RacingRepo(_job("classical-stack-v1")),  # type: ignore[arg-type]
+        objects=FakeObjectRepo(),  # type: ignore[arg-type]
+        audit=FakeAudit(),  # type: ignore[arg-type]
+        queue=FakeQueue(),
+        settings=settings,
+    )
+    with pytest.raises(IntegrityError):
+        await service.create(user=fake_user, payload=payload(photos), idempotency_key=None)
+
+
+async def test_the_enqueue_waits_for_the_commit_when_there_is_a_unit_of_work(
+    fake_user: Any, settings: Settings
+) -> None:
+    """Un mensaje que apunte a una fila no confirmada revienta al worker."""
+    from app.core.uow import UnitOfWork
+
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 4)]
+    queue = FakeQueue()
+    repo = FakeReconstructionRepo()
+    uow = UnitOfWork(lambda: None)  # type: ignore[arg-type,return-value]
+    service = ReconstructionService(
+        photos=FakePhotoRepo(photos),  # type: ignore[arg-type]
+        reconstructions=repo,  # type: ignore[arg-type]
+        objects=FakeObjectRepo(),  # type: ignore[arg-type]
+        audit=FakeAudit(),  # type: ignore[arg-type]
+        queue=queue,
+        settings=settings,
+        uow=uow,
+    )
+    await service.create(user=fake_user, payload=payload(photos), idempotency_key=None)
+    # Todavía nada en la cola: la transacción no se ha confirmado.
+    assert queue.sent == []
+    await uow.commit()
+    assert len(queue.sent) == 1

@@ -23,6 +23,7 @@ from app.api.deps import (
     get_storage,
 )
 from app.core.errors import NotFoundError, UnauthorizedError
+from app.db.session import session_scope
 from app.models.enums import JobStatus
 from app.models.reconstruction import Reconstruction
 from app.repositories.photo import PhotoRepository
@@ -179,7 +180,29 @@ async def reconstruction_events(
     repo: RepoDep,
 ) -> EventSourceResponse:
     """Emite un evento cada ~2 s hasta que el job termina o el cliente se va."""
+    # El docstring es la descripción pública de la operación en el OpenAPI, así que
+    # el razonamiento de implementación va aquí:
+    #
+    # El generador abre su **propia** sesión en cada sondeo. El cuerpo de una
+    # respuesta en streaming se produce *después* de que la unidad de trabajo de la
+    # petición se haya confirmado y cerrado, así que dentro del generador no se puede
+    # usar `repo`: esa sesión ya no existe. Además, sostener una conexión del pool
+    # durante los 15 minutos que puede durar un SSE lo agotaría con una docena de
+    # espectadores.
+    #
+    # La comprobación de visibilidad sí usa la sesión de la petición: ocurre dentro
+    # del handler, antes de devolver la respuesta.
     await _visible(repo, reconstruction_id, viewer.id if viewer else None)
+
+    async def poll() -> Reconstruction | None:
+        """Un sondeo = una sesión corta, abierta y cerrada al momento."""
+        async with session_scope() as session:
+            job = await ReconstructionRepository(session).get(reconstruction_id)
+            if job is None:
+                return None
+            # `expire_on_commit=False`, así que los atributos siguen siendo legibles
+            # cuando la sesión se cierra al salir del `with`.
+            return job
 
     async def stream() -> AsyncIterator[dict[str, str]]:
         elapsed = 0.0
@@ -187,7 +210,7 @@ async def reconstruction_events(
         while elapsed < SSE_MAX_SECONDS:
             if await request.is_disconnected():
                 return
-            job = await repo.get(reconstruction_id)
+            job = await poll()
             if job is None:
                 yield {"event": "error", "data": json.dumps({"detail": "desaparecida"})}
                 return

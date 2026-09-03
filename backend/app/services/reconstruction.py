@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import Settings
 from app.core.errors import (
@@ -27,6 +28,7 @@ from app.core.errors import (
     RateLimitError,
     UnprocessableError,
 )
+from app.core.uow import UnitOfWork
 from app.domain.astro import diffraction_limit_arcsec
 from app.domain.disclosure import (
     ResultArtifacts,
@@ -79,6 +81,7 @@ class ReconstructionService:
         queue: Any,
         settings: Settings,
         pipeline_version: str = "dev",
+        uow: UnitOfWork | None = None,
     ) -> None:
         self.photos = photos
         self.reconstructions = reconstructions
@@ -87,6 +90,7 @@ class ReconstructionService:
         self.queue = queue
         self.settings = settings
         self.pipeline_version = pipeline_version
+        self.uow = uow
 
     # ------------------------------------------------------------------ #
     async def _gather_candidates(
@@ -390,7 +394,20 @@ class ReconstructionService:
             idempotency_key=idempotency_key,
             is_public=payload.is_public,
         )
-        await self.reconstructions.add(job)
+        try:
+            await self.reconstructions.add(job)
+        except IntegrityError:
+            # Carrera con otra petición que traía la misma `Idempotency-Key`: el
+            # UNIQUE (requested_by, idempotency_key) es el árbitro. Gana la primera y
+            # esta devuelve su trabajo, que es justo lo que promete la cabecera.
+            if not idempotency_key:
+                raise
+            await self.reconstructions.rollback()
+            existing = await self.reconstructions.get_by_idempotency_key(user.id, idempotency_key)
+            if existing is None:
+                raise
+            log.info("idempotent_replay_after_race", reconstruction_id=str(existing.id))
+            return existing, False
 
         by_id = {str(p.id): p for p in photos}
         rows: list[ReconstructionInput] = [
@@ -432,22 +449,30 @@ class ReconstructionService:
                 "license": job.license.value if job.license else None,
             },
         )
-        await self.queue.send(
-            self.settings.sqs_queue_reconstruct,
-            {
-                "type": "reconstruct",
-                "reconstruction_id": str(job.id),
-                "pipeline": job.pipeline,
-                "params": job.params,
-                "model_id": str(job.model_id) if job.model_id else None,
-                "photo_ids": [f.photo_id for f in selection.selected],
-                "weights": [f.weight for f in selection.selected],
-                "license": job.license.value if job.license else None,
-                "enqueued_at": datetime.now(UTC).isoformat(),
-            },
-            idempotency_key=idempotency_key or f"recon:{job.id}",
-        )
-        log.info("reconstruction_enqueued", reconstruction_id=str(job.id))
+        # El mensaje sale **después** del commit: la fila que registra la clave de
+        # idempotencia y el trabajo que protege se confirman en la misma transacción,
+        # y solo entonces se anuncia el trabajo al worker.
+        body = {
+            "type": "reconstruct",
+            "reconstruction_id": str(job.id),
+            "pipeline": job.pipeline,
+            "params": job.params,
+            "model_id": str(job.model_id) if job.model_id else None,
+            "photo_ids": [f.photo_id for f in selection.selected],
+            "weights": [f.weight for f in selection.selected],
+            "license": job.license.value if job.license else None,
+            "enqueued_at": datetime.now(UTC).isoformat(),
+        }
+        key = idempotency_key or f"recon:{job.id}"
+
+        async def _send() -> None:
+            await self.queue.send(self.settings.sqs_queue_reconstruct, body, idempotency_key=key)
+            log.info("reconstruction_enqueued", reconstruction_id=str(job.id))
+
+        if self.uow is not None:
+            self.uow.after_commit(_send)
+        else:
+            await _send()
         return job, True
 
     # ------------------------------------------------------------------ #

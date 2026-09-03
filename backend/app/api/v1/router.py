@@ -21,7 +21,22 @@ from app.api.v1 import (
     stats,
 )
 
-__all__ = ["api_router"]
+__all__ = ["V1_ROUTERS", "api_router"]
+
+#: Los routers hoja, en orden de registro. Se exponen porque ``include_router``
+#: envuelve cada uno y desde el agregado ya no se llega a sus ``APIRoute``; hay
+#: código (la anotación de seguridad del OpenAPI) que necesita inspeccionarlas.
+V1_ROUTERS = (
+    health.router,
+    auth.router,
+    search.router,
+    photos.router,
+    objects.router,
+    reconstructions.router,
+    models.router,
+    licenses.router,
+    stats.router,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router)
