@@ -6,9 +6,16 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
+from botocore.exceptions import ClientError
 
 from app.core.config import Settings
-from app.core.errors import BadRequestError, ConflictError, NotFoundError, QuotaExceededError
+from app.core.errors import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    QuotaExceededError,
+    UnprocessableError,
+)
 from app.domain.licensing import enforce_stack_consent
 from app.models.enums import LocationSource, PhotoStatus, TimeSource
 from app.models.photo import Photo
@@ -17,6 +24,8 @@ from app.repositories.audit import AuditRepository
 from app.repositories.photo import PhotoRepository
 from app.repositories.user import UserRepository
 from app.schemas.photo import (
+    MultipartCompletedOut,
+    MultipartCompleteIn,
     MultipartPartOut,
     MultipartUploadOut,
     PhotoCompleteIn,
@@ -114,6 +123,9 @@ class UploadService:
             multipart = await self.storage.create_multipart_upload(
                 key=key, size_bytes=request.size_bytes, content_type=request.mime_type
             )
+            # Se guarda para poder validar el `upload_id` en `complete-multipart` y
+            # para que el barrido de huérfanas sepa qué abortar.
+            photo.multipart_upload_id = multipart.upload_id
             return UploadTicketOut(
                 photo_id=photo_id,
                 multipart=MultipartUploadOut(
@@ -146,6 +158,124 @@ class UploadService:
                 s3_key=post.key,
                 max_bytes=post.max_bytes,
             ),
+        )
+
+    # ------------------------------------------------------------------ #
+    async def _owned_photo(self, *, user: User, photo_id: uuid.UUID) -> Photo:
+        """La foto, si existe y es de quien pregunta.
+
+        Se devuelve 404 y no 403 cuando el dueño es otro: confirmar que un id existe
+        ya filtra información sobre subidas ajenas.
+        """
+        photo = await self.photos.get(photo_id)
+        if photo is None or photo.owner_id != user.id:
+            raise NotFoundError("La foto no existe.")
+        return photo
+
+    async def complete_multipart(
+        self, *, user: User, photo_id: uuid.UUID, payload: MultipartCompleteIn
+    ) -> MultipartCompletedOut:
+        """Cierra una subida multipart y deja la foto lista para el paso 3.
+
+        Sin esta llamada S3 nunca materializa el objeto: conserva las partes y la
+        regla de ciclo de vida acaba borrándolas, así que una subida grande no podría
+        completarse jamás.
+
+        La numeración de las partes ya la validó el schema (desde 1 y sin huecos);
+        aquí se valida la **pertenencia**: que el ``upload_id`` sea el de esta foto.
+        """
+        photo = await self._owned_photo(user=user, photo_id=photo_id)
+
+        if photo.multipart_upload_id is None:
+            if photo.status is not PhotoStatus.UPLOADING:
+                raise ConflictError(
+                    f"La subida de esta foto ya se cerró (estado «{photo.status.value}»); "
+                    "`complete-multipart` solo se puede llamar una vez."
+                )
+            raise ConflictError(
+                "Esta foto no tiene ninguna subida multipart abierta. Los ficheros "
+                f"por debajo de {self.settings.multipart_threshold_bytes} bytes usan "
+                "el POST presignado simple y no necesitan este paso."
+            )
+
+        if payload.upload_id != photo.multipart_upload_id:
+            raise BadRequestError(
+                "El `upload_id` no corresponde a la subida abierta de esta foto.",
+                errors=[{"pointer": "/upload_id", "detail": "no coincide", "code": "mismatch"}],
+            )
+
+        try:
+            total_bytes = await self.storage.complete_multipart_upload(
+                key=photo.s3_key_original,
+                upload_id=payload.upload_id,
+                parts=[(p.part_number, p.etag) for p in payload.parts],
+            )
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code == "NoSuchUpload":
+                photo.multipart_upload_id = None
+                raise ConflictError(
+                    "S3 ya no conoce esta subida: se abortó o caducó. Vuelve a pedir "
+                    "una subida nueva con POST /photos/uploads."
+                ) from exc
+            raise UnprocessableError(
+                "S3 rechazó las partes enviadas. Comprueba que los `etag` son los que "
+                "devolvió cada PUT y que no falta ninguna parte.",
+                errors=[{"pointer": "/parts", "detail": code or "InvalidPart"}],
+            ) from exc
+
+        photo.multipart_upload_id = None
+        if photo.original_bytes and total_bytes != photo.original_bytes:
+            # No se aborta: el objeto ya existe. Se rechaza el cierre lógico y el
+            # barrido de huérfanas se lo lleva; así el cliente ve el porqué.
+            raise ConflictError(
+                f"El objeto ensamblado pesa {total_bytes} bytes y se anunciaron "
+                f"{photo.original_bytes}."
+            )
+
+        await self.audit.record(
+            action="photo.multipart_completed",
+            entity_type="photo",
+            entity_id=photo.id,
+            actor_id=user.id,
+            payload={"parts": len(payload.parts), "total_bytes": total_bytes},
+        )
+        log.info(
+            "multipart_completed",
+            photo_id=str(photo.id),
+            parts=len(payload.parts),
+            total_bytes=total_bytes,
+        )
+        return MultipartCompletedOut(
+            photo_id=photo.id,
+            s3_key=photo.s3_key_original,
+            total_bytes=total_bytes,
+            status=photo.status,
+        )
+
+    async def abort_upload(self, *, user: User, photo_id: uuid.UUID) -> None:
+        """Cancela una subida en curso y libera las partes huérfanas.
+
+        Las partes de un multipart abierto se facturan hasta que pasa la regla de
+        ciclo de vida, así que abortar explícitamente ahorra dinero real.
+        """
+        photo = await self._owned_photo(user=user, photo_id=photo_id)
+        if photo.status is not PhotoStatus.UPLOADING:
+            raise ConflictError(
+                f"La foto está en estado «{photo.status.value}»; para retirarla usa "
+                "DELETE /photos/{id}."
+            )
+        if photo.multipart_upload_id is not None:
+            await self.storage.abort_multipart_upload(
+                key=photo.s3_key_original, upload_id=photo.multipart_upload_id
+            )
+            photo.multipart_upload_id = None
+        photo.deleted_at = datetime.now(UTC)
+        await self.audit.record(
+            action="photo.upload_aborted",
+            entity_type="photo",
+            entity_id=photo.id,
+            actor_id=user.id,
         )
 
     # ------------------------------------------------------------------ #

@@ -272,3 +272,80 @@ async def test_photo_defaults_match_the_documented_ones(session: AsyncSession) -
     assert photo.location_precision is LocationPrecision.EXACT
     assert photo.created_at <= datetime.now(UTC)
     await session.rollback()
+
+
+async def test_new_multipart_and_map_columns_exist(session: AsyncSession) -> None:
+    """Columnas de la migración 0002, necesarias para `complete-multipart` y `result`."""
+    columns = set(
+        (
+            await session.execute(
+                text(
+                    "SELECT table_name || '.' || column_name FROM information_schema.columns "
+                    "WHERE table_name IN ('photos', 'reconstructions')"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert "photos.multipart_upload_id" in columns
+    assert "reconstructions.s3_key_uncertainty" in columns
+    assert "reconstructions.s3_key_weight_map" in columns
+
+
+async def test_stats_query_runs_and_counts_only_public_rows(
+    session: AsyncSession,
+) -> None:
+    """La consulta real de ``GET /stats``, contra Postgres.
+
+    Es SQL con agregados y `DISTINCT`: probarlo solo con dobles no demostraría nada.
+    """
+    from app.repositories.stats import StatsRepository
+
+    alice = await _user(session)
+    bob = await _user(session)
+
+    def photo(owner: uuid.UUID, key: str, **kw: object) -> Photo:
+        return Photo(
+            owner_id=owner,
+            s3_bucket="b",
+            s3_key_original=key,
+            checksum_sha256=key.encode().ljust(32, b"\x00")[:32],
+            **kw,  # type: ignore[arg-type]
+        )
+
+    session.add_all(
+        [
+            # Cuentan: listas, sin borrar.
+            photo(alice.id, "ready-1", status=PhotoStatus.READY, exposure_seconds=120.0),
+            photo(alice.id, "ready-2", status=PhotoStatus.READY, exposure_seconds=300.0),
+            photo(bob.id, "ready-3", status=PhotoStatus.READY, exposure_seconds=60.0),
+            # No cuentan.
+            photo(bob.id, "processing", status=PhotoStatus.PROCESSING, exposure_seconds=999.0),
+            photo(
+                bob.id,
+                "deleted",
+                status=PhotoStatus.READY,
+                exposure_seconds=999.0,
+                deleted_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    await session.flush()
+
+    stats = await StatsRepository(session).snapshot()
+    assert stats.photo_count == 3
+    assert stats.contributor_count == 2  # alice y bob, no tres filas
+    assert stats.total_exposure_seconds == pytest.approx(480.0)
+    assert stats.reconstruction_count == 0
+    await session.rollback()
+
+
+async def test_stats_query_survives_an_empty_database(session: AsyncSession) -> None:
+    """La portada tiene que poder pintarse el primer día, sin dividir por cero."""
+    from app.repositories.stats import StatsRepository
+
+    stats = await StatsRepository(session).snapshot()
+    assert stats.photo_count == 0
+    assert stats.contributor_count == 0
+    assert stats.total_exposure_seconds == 0.0

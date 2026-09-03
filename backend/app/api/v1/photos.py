@@ -18,6 +18,8 @@ from app.api.deps import (
 from app.repositories.photo import PhotoRepository
 from app.schemas.photo import (
     DownloadOut,
+    MultipartCompletedOut,
+    MultipartCompleteIn,
     PhotoCompleteIn,
     PhotoOut,
     PhotoSummaryOut,
@@ -50,6 +52,44 @@ async def create_upload(
     El binario **nunca** pasa por este backend.
     """
     return await service.create_upload(user=user, request=payload)
+
+
+@router.post(
+    "/{photo_id}/uploads/complete-multipart",
+    response_model=MultipartCompletedOut,
+    summary="Paso 2b: cierra una subida multipart (>100 MB)",
+)
+async def complete_multipart_upload(
+    photo_id: UUID,
+    payload: MultipartCompleteIn,
+    user: CurrentDbUser,
+    service: UploadServiceDep,
+) -> MultipartCompletedOut:
+    """Llama a ``CompleteMultipartUpload`` y deja la foto lista para el paso 3.
+
+    Sin esta llamada S3 nunca materializa el objeto: guarda las partes sueltas y la
+    regla de ciclo de vida acaba borrándolas.
+
+    * 404 si la foto no existe o no es tuya.
+    * 409 si la subida ya se cerró, o si S3 ya no conoce ese ``upload_id``.
+    * 422 si faltan partes o los ``part_number`` no van desde 1 sin huecos.
+    """
+    return await service.complete_multipart(user=user, photo_id=photo_id, payload=payload)
+
+
+@router.delete(
+    "/{photo_id}/uploads",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Cancela una subida en curso y libera las partes huérfanas",
+)
+async def abort_upload(photo_id: UUID, user: CurrentDbUser, service: UploadServiceDep) -> Response:
+    """``AbortMultipartUpload`` + retirada de la fila.
+
+    Las partes de un multipart abierto se facturan hasta que pasa la regla de ciclo
+    de vida, así que cancelar explícitamente ahorra dinero real.
+    """
+    await service.abort_upload(user=user, photo_id=photo_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

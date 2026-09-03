@@ -97,8 +97,12 @@ o alias (el autocompletado del formulario de subida usa `q`), con `photo_count` 
 cobertura**: cuántas fotos hay por celda de tiempo × latitud × focal. Es lo que
 alimenta el widget "a este objeto le faltan tomas desde el hemisferio sur". Responde
 `{period_bin, lat_bin_size_deg, focal_bins_mm, cells: [{period, lat_bin, focal_bin, count, best_quality}],
-sites: [{lat, lon, count}], gaps: [{reason, description}]}`. Los puntos de `sites`
-vienen **ya ofuscados** por la precisión de cada foto.
+sites: [{lat, lon, count}], gaps: [{reason, description}]}`.
+
+Los puntos de `sites[]` vienen **ya ofuscados**, y el orden de las operaciones importa:
+se agrupa por `location_precision` **antes** de agregar, nunca después. Agregar primero
+y ofuscar el centroide después filtraría posiciones exactas por la puerta de atrás,
+que es justo lo que la regla de privacidad existe para evitar.
 
 ## Reconstrucciones
 
@@ -130,12 +134,17 @@ lanzar nada, y enseñar lo que devuelve:
 ```jsonc
 {
   "selected": [{"photo_id", "weight", "quality_score", "fwhm_arcsec", "pixel_scale_arcsec"}],
-  "blocked":  [{"photo_id", "reason"}],   // reason: license_nd | license_arr |
-                                          // derivatives_opt_out | unsolved | too_low_quality
+  // Bloqueo y rechazo son cosas distintas y no deben mezclarse:
+  // un bloqueo aborta el job entero con 422 porque no hay forma legal de seguir;
+  // un rechazo solo deja ese frame fuera y el job continúa.
+  "blocked":  [{"photo_id", "reason"}],   // no_derivatives | stack_opt_out
+  "rejected": [{"photo_id", "reason"}],   // unsolved | too_low_quality | duplicate |
+                                          // no_overlap | saturated
   "resulting_license": "CC-BY-NC-4.0",
   "estimated_compute_seconds": 420,
   "estimated_queue_seconds": 180,         // arranque en frío de Batch spot
   "estimated_cost_usd": 0.31,
+  "cost_basis": "batch-spot-g5-eu-west-1",
   "uses_learned_model": false             // si true, la UI exige AiDisclosure
 }
 ```
@@ -177,7 +186,10 @@ total_exposure_seconds}`. Alimenta los contadores de la portada. Cacheado 5 minu
 
 `GET /licenses` — catálogo: `[{code, name, version, url, allows_commercial,
 allows_derivatives, requires_attribution, requires_sharealike, restrictiveness, spdx_id}]`,
-la tabla `licenses` de `docs/data-model.md` tal cual.
+la tabla `licenses` de `docs/data-model.md`, envuelto en
+`{items: [...], default_license: "CC-BY-NC-4.0"}`. `default_license` es la del usuario
+si viene autenticado, y la del sistema si no: así el formulario de subida sabe qué
+preseleccionar con una sola llamada, sin cruzar `/licenses` con `/me`.
 `POST /licenses/resolve` → `{photo_ids[]}` → `{resulting_license, blocked: [{photo_id, reason}]}`.
 Es la misma función de dominio que usa el motor de reconstrucción; se expone para
 que el frontend pueda avisar antes de dejar pulsar el botón.

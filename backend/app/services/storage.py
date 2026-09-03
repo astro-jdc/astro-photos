@@ -165,6 +165,60 @@ class StorageService:
             part_size_bytes=chunk,
         )
 
+    async def complete_multipart_upload(
+        self, *, key: str, upload_id: str, parts: list[tuple[int, str]]
+    ) -> int:
+        """Cierra una subida multipart y devuelve el tamaño final del objeto.
+
+        Sin esta llamada S3 conserva las partes pero **no** materializa el objeto: la
+        regla de ciclo de vida acaba borrándolas y la subida se pierde entera.
+
+        S3 exige las partes ordenadas por ``PartNumber``; se ordenan aquí para no
+        depender de que el cliente lo haga.
+        """
+        ordered = sorted(parts, key=lambda p: p[0])
+        try:
+            await asyncio.to_thread(
+                self._client.complete_multipart_upload,
+                Bucket=self._cfg.s3_bucket_uploads,
+                Key=key,
+                UploadId=upload_id,
+                MultipartUpload={
+                    "Parts": [{"PartNumber": number, "ETag": etag} for number, etag in ordered]
+                },
+            )
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code in ("NoSuchUpload", "InvalidPart", "InvalidPartOrder"):
+                # Es culpa del cliente (partes mal, o subida ya cerrada/abortada):
+                # se traduce a un 4xx en el servicio, no a un 502.
+                raise
+            log.error("complete_multipart_failed", key=key, error=str(exc))
+            raise UpstreamError("No se pudo cerrar la subida multipart.") from exc
+        except BotoCoreError as exc:
+            log.error("complete_multipart_failed", key=key, error=str(exc))
+            raise UpstreamError("No se pudo cerrar la subida multipart.") from exc
+
+        head = await self.head(bucket=self._cfg.s3_bucket_uploads, key=key)
+        return int(head.get("ContentLength", 0)) if head else 0
+
+    async def abort_multipart_upload(self, *, key: str, upload_id: str) -> None:
+        """Descarta una subida multipart abierta.
+
+        Las partes huérfanas se facturan hasta que la regla de ciclo de vida pasa, así
+        que abortar explícitamente al cancelar ahorra dinero real. Nunca lanza: es
+        limpieza, y fallar aquí no debe tumbar la operación que la pidió.
+        """
+        try:
+            await asyncio.to_thread(
+                self._client.abort_multipart_upload,
+                Bucket=self._cfg.s3_bucket_uploads,
+                Key=key,
+                UploadId=upload_id,
+            )
+        except (BotoCoreError, ClientError) as exc:
+            log.warning("abort_multipart_failed", key=key, error=str(exc))
+
     async def presigned_get(
         self, *, bucket: str, key: str, filename: str | None = None
     ) -> tuple[str, datetime]:

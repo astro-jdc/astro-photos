@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
@@ -17,16 +17,19 @@ from app.api.deps import (
     IdempotencyKey,
     OptionalDbUser,
     SettingsDep,
+    get_photo_repository,
     get_reconstruction_repository,
     get_reconstruction_service,
     get_storage,
 )
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, UnauthorizedError
 from app.models.enums import JobStatus
 from app.models.reconstruction import Reconstruction
+from app.repositories.photo import PhotoRepository
 from app.repositories.reconstruction import ReconstructionRepository
 from app.schemas.common import Page
 from app.schemas.reconstruction import (
+    BestSingleFrameOut,
     ReconstructionCreateIn,
     ReconstructionInputOut,
     ReconstructionOut,
@@ -40,6 +43,7 @@ router = APIRouter(prefix="/reconstructions", tags=["reconstructions"])
 
 ServiceDep = Annotated[ReconstructionService, Depends(get_reconstruction_service)]
 RepoDep = Annotated[ReconstructionRepository, Depends(get_reconstruction_repository)]
+PhotoRepoDep = Annotated[PhotoRepository, Depends(get_photo_repository)]
 StorageDep = Annotated[StorageService, Depends(get_storage)]
 
 #: Cadencia del SSE. 2 s es suficiente para una barra de progreso y no castiga la
@@ -124,12 +128,22 @@ async def create_reconstruction(
 async def list_reconstructions(
     repo: RepoDep,
     settings: SettingsDep,
+    viewer: OptionalDbUser,
     object_id: UUID | None = None,
+    mine: Annotated[
+        bool, Query(description="Solo las mías, incluidas las privadas y en curso")
+    ] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: str | None = None,
 ) -> Page[ReconstructionOut]:
+    """Sin `mine` devuelve la galería pública; con `mine` exige estar identificado."""
+    if mine and viewer is None:
+        raise UnauthorizedError("`mine=true` requiere autenticación.")
     page = await repo.list_public(
-        limit=min(limit, settings.max_page_size), cursor=cursor, object_id=object_id
+        limit=min(limit, settings.max_page_size),
+        cursor=cursor,
+        object_id=object_id,
+        requested_by=viewer.id if (mine and viewer is not None) else None,
     )
     return Page[ReconstructionOut](
         items=[_to_out(j) for j in page.items], next_cursor=page.next_cursor
@@ -177,6 +191,7 @@ async def reconstruction_events(
             if job is None:
                 yield {"event": "error", "data": json.dumps({"detail": "desaparecida"})}
                 return
+            stage = (job.metrics or {}).get("stage") if job.metrics else None
             signature = (job.status.value, round(job.progress, 4))
             if signature != last_signature:
                 last_signature = signature
@@ -187,6 +202,7 @@ async def reconstruction_events(
                             "reconstruction_id": str(job.id),
                             "status": job.status.value,
                             "progress": job.progress,
+                            "stage": stage,
                             "metrics": job.metrics,
                             "message": job.error_message,
                             "at": datetime.now(UTC).isoformat(),
@@ -235,15 +251,22 @@ async def reconstruction_inputs(
 @router.get(
     "/{reconstruction_id}/result",
     response_model=ReconstructionResultOut,
-    summary="URLs firmadas del TIFF/FITS y ATTRIBUTION.md",
+    summary="URLs firmadas del TIFF/FITS, mapas, ATTRIBUTION.md y el mejor frame",
 )
 async def reconstruction_result(
     reconstruction_id: UUID,
     viewer: OptionalDbUser,
     repo: RepoDep,
+    photos: PhotoRepoDep,
     storage: StorageDep,
     settings: SettingsDep,
 ) -> ReconstructionResultOut:
+    """Incluye ``best_single_frame``: la **comparación honesta**.
+
+    Sin el mejor frame individual de las entradas la interfaz afirmaría una mejora
+    que no enseña, y el usuario no podría juzgar si la reconstrucción aportó algo
+    sobre la mejor toma que ya existía.
+    """
     job = await _visible(repo, reconstruction_id, viewer.id if viewer else None)
     bucket = settings.s3_bucket_derived
     expires: datetime | None = None
@@ -256,16 +279,61 @@ async def reconstruction_result(
         expires = exp
         return url
 
+    best: BestSingleFrameOut | None = None
+    if job.status is JobStatus.SUCCEEDED:
+        best = await _best_single_frame(repo, photos, job.id, sign)
+
     return ReconstructionResultOut(
         reconstruction_id=job.id,
         status=job.status,
         license=job.license,
+        pipeline=job.pipeline,
+        pipeline_version=job.pipeline_version,
+        model_id=job.model_id,
         result_url=await sign(job.s3_key_result),
         preview_url=await sign(job.s3_key_preview),
+        uncertainty_map_url=await sign(job.s3_key_uncertainty),
+        weight_map_url=await sign(job.s3_key_weight_map),
+        provenance_json_url=await sign(job.s3_key_provenance),
+        attribution_md_url=await sign(job.s3_key_attribution),
         report_url=await sign(job.s3_key_report),
-        attribution_url=await sign(job.s3_key_attribution),
-        provenance_url=await sign(job.s3_key_provenance),
+        best_single_frame=best,
+        metrics=job.metrics,
         expires_at=expires,
+    )
+
+
+async def _best_single_frame(
+    repo: ReconstructionRepository,
+    photos: PhotoRepository,
+    reconstruction_id: UUID,
+    sign: Callable[[str | None], Awaitable[str | None]],
+) -> BestSingleFrameOut | None:
+    """El mejor frame **realmente usado**, no el mejor candidato.
+
+    Se ordena por ``quality_score`` y se desempata por ``photo_id`` para que la
+    comparación que ve el usuario sea siempre la misma (regla dura 3: nada de
+    depender del orden de la base de datos).
+    """
+    rows = [row for row in await repo.inputs_for(reconstruction_id) if not row.was_rejected]
+    if not rows:
+        return None
+    used = await photos.get_many([row.photo_id for row in rows])
+    if not used:
+        return None
+    best = min(
+        used,
+        key=lambda p: (
+            -(p.quality_score if p.quality_score is not None else -1.0),
+            str(p.id),
+        ),
+    )
+    return BestSingleFrameOut(
+        photo_id=best.id,
+        preview_url=await sign(best.s3_key_preview),
+        fwhm_arcsec=best.fwhm_arcsec,
+        snr_estimate=best.snr_estimate,
+        quality_score=best.quality_score,
     )
 
 

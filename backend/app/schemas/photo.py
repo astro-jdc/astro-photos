@@ -22,6 +22,9 @@ __all__ = [
     "AstrometryOut",
     "DownloadOut",
     "EquipmentIn",
+    "MultipartCompleteIn",
+    "MultipartCompletedOut",
+    "MultipartPartIn",
     "MultipartPartOut",
     "MultipartUploadOut",
     "PhotoCompleteIn",
@@ -115,6 +118,57 @@ class MultipartUploadOut(Schema):
     part_urls: list[MultipartPartOut]
     expires_at: datetime
     part_size_bytes: int
+
+
+class MultipartPartIn(Schema):
+    """Una parte ya subida, tal como la devolvió S3."""
+
+    part_number: int = Field(ge=1, le=10_000)
+    #: ETag que devolvió el `PUT` de la parte. S3 lo entrecomilla; se acepta con o sin.
+    etag: str = Field(min_length=1, max_length=200)
+
+    @field_validator("etag")
+    @classmethod
+    def _normalize_etag(cls, value: str) -> str:
+        return f'"{value.strip(chr(34))}"'
+
+
+class MultipartCompleteIn(Schema):
+    """Cuerpo de ``POST /photos/{id}/uploads/complete-multipart``."""
+
+    upload_id: str = Field(min_length=1, max_length=500)
+    parts: list[MultipartPartIn] = Field(min_length=1, max_length=10_000)
+
+    @model_validator(mode="after")
+    def _parts_are_complete_and_consecutive(self) -> MultipartCompleteIn:
+        """S3 exige todas las partes, numeradas desde 1 y sin huecos.
+
+        Se valida aquí y no en S3 para poder devolver un 422 que diga *qué* falta,
+        en vez del ``InvalidPart`` opaco de AWS.
+        """
+        numbers = [p.part_number for p in self.parts]
+        if len(set(numbers)) != len(numbers):
+            duplicated = sorted({n for n in numbers if numbers.count(n) > 1})
+            raise ValueError(f"Hay part_number repetidos: {duplicated}.")
+        expected = list(range(1, len(numbers) + 1))
+        if sorted(numbers) != expected:
+            missing = sorted(set(expected) - set(numbers))
+            raise ValueError(
+                "Las partes deben ir numeradas desde 1 y sin huecos; "
+                f"faltan {missing or 'ninguna, pero hay números fuera de rango'}."
+            )
+        return self
+
+
+class MultipartCompletedOut(Schema):
+    """Resultado del cierre: la foto ya está lista para el paso 3 (`/complete`)."""
+
+    photo_id: UUID
+    s3_key: str
+    total_bytes: int
+    status: PhotoStatus
+    #: Recordatorio explícito de cuál es el siguiente paso del flujo de 3 pasos.
+    next_step: str = "POST /photos/{photo_id}/complete"
 
 
 class UploadTicketOut(Schema):

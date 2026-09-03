@@ -11,14 +11,38 @@ from app.core.security import Role
 from app.domain.licensing import LicenseCode
 from app.schemas.common import Schema
 
-__all__ = ["MeOut", "PublicUserOut", "StorageQuotaOut", "UserUpdateIn"]
+__all__ = ["MeOut", "PublicUserOut", "QuotaOut", "StorageQuotaOut", "UserUpdateIn"]
 
 
-class StorageQuotaOut(Schema):
+class QuotaOut(Schema):
+    """Cuota de almacenamiento **y** límites de trabajos vigentes.
+
+    Los límites de trabajos viajan aquí (``docs/api.md``) para que el cliente pueda
+    deshabilitar el botón de reconstruir en vez de descubrir el tope con un 429.
+    """
+
     quota_bytes: int
     used_bytes: int
     available_bytes: int
     used_fraction: float = Field(ge=0.0)
+    #: Tope de trabajos simultáneos en cola o corriendo.
+    max_queued_jobs: int
+    #: Tope de trabajos lanzados en 24 h.
+    max_jobs_per_day: int
+    #: Cuántos tiene ahora mismo en cola o corriendo.
+    jobs_queued_now: int
+    #: Cuántos ha lanzado en las últimas 24 h.
+    jobs_today: int
+
+    @property
+    def can_queue_job(self) -> bool:
+        return (
+            self.jobs_queued_now < self.max_queued_jobs and self.jobs_today < self.max_jobs_per_day
+        )
+
+
+#: Nombre anterior, mantenido como alias para no romper importaciones.
+StorageQuotaOut = QuotaOut
 
 
 class MeOut(Schema):
@@ -33,7 +57,7 @@ class MeOut(Schema):
     default_license: LicenseCode
     role: Role
     is_active: bool
-    storage: StorageQuotaOut
+    quota: QuotaOut
     created_at: datetime
 
 

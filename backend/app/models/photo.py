@@ -84,6 +84,10 @@ class Photo(UUIDPkMixin, TimestampMixin, Base):
     original_bytes: Mapped[int | None] = mapped_column(BigInteger)
     #: Deduplicación; UNIQUE por ``owner_id``.
     checksum_sha256: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    #: `UploadId` de S3 mientras una subida multipart está abierta; NULL en cuanto se
+    #: cierra o se aborta. Se guarda para poder validar que el `upload_id` que manda
+    #: el cliente en `complete-multipart` es realmente el de esta foto.
+    multipart_upload_id: Mapped[str | None] = mapped_column(Text)
     mime_type: Mapped[str | None] = mapped_column(Text)
     width_px: Mapped[int | None] = mapped_column(Integer)
     height_px: Mapped[int | None] = mapped_column(Integer)
@@ -237,6 +241,12 @@ class Photo(UUIDPkMixin, TimestampMixin, Base):
             postgresql_where=text("status = 'ready' AND is_plate_solved"),
         ),
         Index("ix_photos_owner_status", "owner_id", "status"),
+        # El barrido de subidas grandes abandonadas busca justo estas filas.
+        Index(
+            "ix_photos_open_multipart",
+            "owner_id",
+            postgresql_where=text("multipart_upload_id IS NOT NULL"),
+        ),
         Index("ix_photos_captured_at", "captured_at_utc"),
     )
 

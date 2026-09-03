@@ -340,3 +340,113 @@ def test_either_photo_ids_or_selector_but_not_both() -> None:
 def test_unknown_pipeline_is_rejected() -> None:
     with pytest.raises(ValueError, match="Pipeline desconocido"):
         ReconstructionCreateIn(photo_ids=[uuid.uuid4(), uuid.uuid4()], pipeline="magia-v9")
+
+
+# --------------------------------------------------------------------------- #
+# best_single_frame — la comparación honesta
+# --------------------------------------------------------------------------- #
+class _InputRow:
+    def __init__(self, photo_id: uuid.UUID, *, rejected: bool = False) -> None:
+        self.photo_id = photo_id
+        self.was_rejected = rejected
+
+
+class _InputsRepo:
+    def __init__(self, rows: list[_InputRow]) -> None:
+        self.rows = rows
+
+    async def inputs_for(self, reconstruction_id: uuid.UUID) -> list[_InputRow]:
+        return self.rows
+
+
+async def _sign(key: str | None) -> str | None:
+    return f"https://signed/{key}" if key else None
+
+
+async def test_best_single_frame_picks_the_highest_quality_frame_used() -> None:
+    from app.api.v1.reconstructions import _best_single_frame
+
+    photos = [make_photo(1, quality=0.4), make_photo(2, quality=0.91), make_photo(3, quality=0.7)]
+    for p in photos:
+        p.s3_key_preview = f"preview-{p.id}"
+        p.fwhm_arcsec = 2.0
+        p.snr_estimate = 30.0
+    repo = _InputsRepo([_InputRow(p.id) for p in photos])
+    best = await _best_single_frame(
+        repo,  # type: ignore[arg-type]
+        FakePhotoRepo(photos),  # type: ignore[arg-type]
+        uuid.uuid4(),
+        _sign,
+    )
+    assert best is not None
+    assert best.photo_id == photos[1].id
+    assert best.quality_score == pytest.approx(0.91)
+    assert best.preview_url is not None and best.preview_url.startswith("https://signed/")
+
+
+async def test_best_single_frame_ignores_rejected_inputs() -> None:
+    """Se compara contra un frame que *entró*, no contra uno que se descartó."""
+    from app.api.v1.reconstructions import _best_single_frame
+
+    used = make_photo(1, quality=0.5)
+    rejected = make_photo(2, quality=0.99)
+    repo = _InputsRepo([_InputRow(used.id), _InputRow(rejected.id, rejected=True)])
+    best = await _best_single_frame(
+        repo,  # type: ignore[arg-type]
+        FakePhotoRepo([used, rejected]),  # type: ignore[arg-type]
+        uuid.uuid4(),
+        _sign,
+    )
+    assert best is not None
+    assert best.photo_id == used.id
+
+
+async def test_best_single_frame_breaks_ties_deterministically() -> None:
+    from app.api.v1.reconstructions import _best_single_frame
+
+    photos = [make_photo(i, quality=0.8) for i in (3, 1, 2)]
+    repo = _InputsRepo([_InputRow(p.id) for p in photos])
+    first = await _best_single_frame(
+        repo,
+        FakePhotoRepo(photos),
+        uuid.uuid4(),
+        _sign,  # type: ignore[arg-type]
+    )
+    second = await _best_single_frame(
+        repo,
+        FakePhotoRepo(list(reversed(photos))),
+        uuid.uuid4(),
+        _sign,  # type: ignore[arg-type]
+    )
+    assert first is not None and second is not None
+    assert first.photo_id == second.photo_id == min(p.id for p in photos)
+
+
+async def test_best_single_frame_is_none_without_inputs() -> None:
+    from app.api.v1.reconstructions import _best_single_frame
+
+    best = await _best_single_frame(
+        _InputsRepo([]),
+        FakePhotoRepo([]),
+        uuid.uuid4(),
+        _sign,  # type: ignore[arg-type]
+    )
+    assert best is None
+
+
+async def test_best_single_frame_handles_photos_without_a_score() -> None:
+    """Una foto sin `quality_score` no puede ganar a una que sí lo tiene."""
+    from app.api.v1.reconstructions import _best_single_frame
+
+    scored = make_photo(1, quality=0.3)
+    unscored = make_photo(2, quality=0.3)
+    unscored.quality_score = None
+    repo = _InputsRepo([_InputRow(scored.id), _InputRow(unscored.id)])
+    best = await _best_single_frame(
+        repo,  # type: ignore[arg-type]
+        FakePhotoRepo([scored, unscored]),  # type: ignore[arg-type]
+        uuid.uuid4(),
+        _sign,
+    )
+    assert best is not None
+    assert best.photo_id == scored.id

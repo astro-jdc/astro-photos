@@ -73,7 +73,8 @@ class PhotoSearchQuery(Schema):
 
     min_quality: float | None = Field(default=None, ge=0.0, le=1.0)
     tracked: bool | None = None
-    owner_id: UUID | None = None
+    #: ``?owner=<uuid>`` en el contrato; ``owner_id`` se acepta como sinónimo.
+    owner_id: UUID | None = Field(default=None, alias="owner")
     #: Solo fotos con astrometría resuelta (obligatorio para reconstruir).
     plate_solved: bool | None = None
 

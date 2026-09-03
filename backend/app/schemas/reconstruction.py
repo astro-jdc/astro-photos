@@ -15,6 +15,7 @@ from app.schemas.license import BlockedPhotoOut
 from app.schemas.search import PhotoSearchQuery
 
 __all__ = [
+    "BestSingleFrameOut",
     "ReconstructionCreateIn",
     "ReconstructionEvent",
     "ReconstructionInputOut",
@@ -163,17 +164,45 @@ class ReconstructionInputOut(Schema):
     snapshot_attribution_name: str | None = None
 
 
+class BestSingleFrameOut(Schema):
+    """El mejor frame individual de las entradas.
+
+    No es un extra: es la **comparación honesta** (``docs/api.md``). Sin ella la
+    interfaz afirma una mejora que no enseña, y el usuario no puede juzgar si la
+    reconstrucción aportó algo sobre la mejor toma que ya existía.
+    """
+
+    photo_id: UUID
+    preview_url: str | None = None
+    fwhm_arcsec: float | None = None
+    snr_estimate: float | None = None
+    quality_score: float | None = None
+
+
 class ReconstructionResultOut(Schema):
     """``GET /reconstructions/{id}/result`` 🔓 — URLs firmadas."""
 
     reconstruction_id: UUID
     status: JobStatus
     license: LicenseCode | None = None
+    pipeline: str
+    pipeline_version: str
+    model_id: UUID | None = None
+
     result_url: str | None = None
     preview_url: str | None = None
+    #: Regla dura 2 de ``CLAUDE.md``: toda salida de un modelo aprendido lleva mapa
+    #: de incertidumbre. En astronomía una fuente alucinada es un falso
+    #: descubrimiento, no un defecto estético.
+    uncertainty_map_url: str | None = None
+    weight_map_url: str | None = None
+    provenance_json_url: str | None = None
+    attribution_md_url: str | None = None
     report_url: str | None = None
-    attribution_url: str | None = None
-    provenance_url: str | None = None
+
+    #: ``None`` mientras el job no ha terminado.
+    best_single_frame: BestSingleFrameOut | None = None
+    metrics: dict[str, Any] | None = None
     expires_at: datetime | None = None
     #: Créditos ya renderizados, por si el cliente no quiere bajar el .md.
     attribution_markdown: str | None = None
@@ -185,6 +214,8 @@ class ReconstructionEvent(Schema):
     reconstruction_id: UUID
     status: JobStatus
     progress: float
+    #: Etapa del pipeline (`align`, `coadd`, `deconv`…) que reporta el worker.
+    stage: str | None = None
     message: str | None = None
     metrics: dict[str, Any] | None = None
     at: datetime

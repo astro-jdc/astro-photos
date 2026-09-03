@@ -75,6 +75,11 @@ class Reconstruction(UUIDPkMixin, TimestampMixin, Base):
     s3_key_attribution: Mapped[str | None] = mapped_column(Text)
     #: ``provenance.json`` firmado.
     s3_key_provenance: Mapped[str | None] = mapped_column(Text)
+    #: Mapa de incertidumbre por píxel. Regla dura 2 de ``CLAUDE.md``: nada generado
+    #: sin etiquetar, y en astronomía eso significa publicar la incertidumbre.
+    s3_key_uncertainty: Mapped[str | None] = mapped_column(Text)
+    #: Mapa de peso (cuántos frames y con qué peso contribuyeron a cada píxel).
+    s3_key_weight_map: Mapped[str | None] = mapped_column(Text)
     #: ``fwhm_arcsec``, ``snr_gain_db``, ``effective_pixel_scale``, ``psnr``, ``ssim``.
     metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     #: La combinación más restrictiva de las entradas (``domain.licensing``).

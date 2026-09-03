@@ -31,6 +31,8 @@ CONTRACT_ROUTES: list[tuple[str, str]] = [
     ("GET", "/users/{user_id}"),
     ("POST", "/photos/uploads"),
     ("POST", "/photos/{photo_id}/complete"),
+    ("POST", "/photos/{photo_id}/uploads/complete-multipart"),
+    ("DELETE", "/photos/{photo_id}/uploads"),
     ("GET", "/photos"),
     ("GET", "/photos/{photo_id}"),
     ("PATCH", "/photos/{photo_id}"),
@@ -51,6 +53,7 @@ CONTRACT_ROUTES: list[tuple[str, str]] = [
     ("GET", "/models"),
     ("GET", "/models/{model_id}"),
     ("POST", "/models/{model_id}/activate"),
+    ("GET", "/stats"),
     ("GET", "/licenses"),
     ("POST", "/licenses/resolve"),
     ("GET", "/healthz"),
@@ -58,11 +61,33 @@ CONTRACT_ROUTES: list[tuple[str, str]] = [
 ]
 
 
-class _FakeSession:
-    """Sesión que no habla con nada. Cualquier consulta es un error explícito."""
+class _FakeResult:
+    """Resultado mínimo: cualquier agregado devuelve 0."""
 
-    async def execute(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("Este test no debe tocar la base de datos.")
+    def scalar_one(self) -> int:
+        return 0
+
+    def scalar_one_or_none(self) -> None:
+        return None
+
+    def one(self) -> tuple[int, int, float]:
+        return (0, 0, 0.0)
+
+    def all(self) -> list[Any]:
+        return []
+
+    def scalars(self) -> _FakeResult:
+        return self
+
+    def first(self) -> None:
+        return None
+
+
+class _FakeSession:
+    """Sesión que no habla con nada: los agregados salen a cero."""
+
+    async def execute(self, *args: Any, **kwargs: Any) -> _FakeResult:
+        return _FakeResult()
 
     async def get(self, *args: Any, **kwargs: Any) -> None:
         return None
@@ -139,6 +164,65 @@ def test_openapi_is_generated_and_is_31(client: TestClient) -> None:
     assert schema["openapi"].startswith("3.1")
     assert schema["info"]["title"] == "astro-photos API"
     assert len(schema["paths"]) >= 20
+
+
+def test_stats_returns_zeroes_on_an_empty_repository(client: TestClient) -> None:
+    """La portada tiene que poder pintar contadores aunque no haya nada todavía."""
+    from app.services.stats import stats_cache
+
+    stats_cache.invalidate()
+    response = client.get("/api/v1/stats")
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) >= {
+        "photo_count",
+        "object_count",
+        "reconstruction_count",
+        "contributor_count",
+        "total_exposure_seconds",
+    }
+    assert body["photo_count"] == 0
+    assert "max-age=300" in response.headers["cache-control"]
+    stats_cache.invalidate()
+
+
+def test_me_reports_the_job_limits(client: TestClient) -> None:
+    """El cliente debe poder deshabilitar el botón en vez de comerse un 429."""
+    body = client.get("/api/v1/me").json()
+    quota = body["quota"]
+    assert set(quota) >= {
+        "quota_bytes",
+        "used_bytes",
+        "available_bytes",
+        "max_queued_jobs",
+        "max_jobs_per_day",
+        "jobs_queued_now",
+        "jobs_today",
+    }
+    assert quota["max_queued_jobs"] >= 1
+    assert quota["jobs_queued_now"] == 0
+
+
+def test_multipart_completion_rejects_non_consecutive_parts(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/photos/22222222-2222-2222-2222-222222222222/uploads/complete-multipart",
+        json={
+            "upload_id": "u",
+            "parts": [{"part_number": 1, "etag": "a"}, {"part_number": 3, "etag": "b"}],
+        },
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith(PROBLEM_CONTENT_TYPE)
+    assert "falta" in response.text or "huecos" in response.text
+
+
+def test_multipart_completion_rejects_an_empty_part_list(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/photos/22222222-2222-2222-2222-222222222222/uploads/complete-multipart",
+        json={"upload_id": "u", "parts": []},
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith(PROBLEM_CONTENT_TYPE)
 
 
 def test_healthz_is_alive(client: TestClient) -> None:

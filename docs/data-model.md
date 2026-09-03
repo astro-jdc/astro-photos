@@ -47,6 +47,7 @@ La entidad central. Una fila = una exposición subida por un usuario.
 | `s3_key_thumb` | text | WebP 512 px |
 | `original_bytes` | bigint | |
 | `checksum_sha256` | bytea NOT NULL | deduplicación; UNIQUE por `owner_id` |
+| `multipart_upload_id` | text | id del multipart de S3 mientras la subida está en curso. Sin guardarlo no se puede validar que el `upload_id` que manda el cliente es el de esta foto. Índice parcial `WHERE ... IS NOT NULL` para barrer huérfanas |
 | `mime_type` | text | `image/jpeg`, `image/tiff`, `image/x-canon-cr3`, `image/fits`… |
 | `width_px` / `height_px` | int | |
 | `bit_depth` | smallint | 8/16/32 |
@@ -160,6 +161,8 @@ Un trabajo de reconstrucción: N fotos de entrada → 1 imagen de salida.
 | `s3_key_report` | text | informe HTML con métricas y contribuciones |
 | `s3_key_attribution` | text | `ATTRIBUTION.md` |
 | `s3_key_provenance` | text | `provenance.json` firmado |
+| `s3_key_uncertainty` | text | mapa de incertidumbre por píxel. **Obligatorio** si `model_id` no es NULL: un pipeline aprendido no puede publicar resultado sin él |
+| `s3_key_weight_map` | text | mapa de peso de la coadición |
 | `metrics` | jsonb | `fwhm_arcsec`, `snr_gain_db`, `effective_pixel_scale`, `psnr`, `ssim` |
 | `license` | license_code | **la más restrictiva** de todas las entradas (ver abajo) |
 | `error_message` | text | |

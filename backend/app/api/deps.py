@@ -18,11 +18,13 @@ from app.repositories.ml import ModelRepository
 from app.repositories.photo import PhotoRepository
 from app.repositories.reconstruction import ReconstructionRepository
 from app.repositories.sky_object import SkyObjectRepository
+from app.repositories.stats import StatsRepository
 from app.repositories.user import UserRepository
 from app.services.photo import PhotoService
 from app.services.queue import QueueService
 from app.services.reconstruction import ReconstructionService
 from app.services.sky_object import ObjectService
+from app.services.stats import StatsService
 from app.services.storage import StorageService
 from app.services.upload import UploadService
 
@@ -35,6 +37,7 @@ __all__ = [
     "get_object_service",
     "get_photo_service",
     "get_reconstruction_service",
+    "get_stats_service",
     "get_upload_service",
 ]
 
@@ -193,6 +196,11 @@ async def get_reconstruction_service(
 
 async def get_object_service(session: DbSession) -> ObjectService:
     return ObjectService(SkyObjectRepository(session))
+
+
+async def get_stats_service(session: DbSession) -> StatsService:
+    """La caché es del proceso, así que se comparte entre peticiones a propósito."""
+    return StatsService(StatsRepository(session))
 
 
 async def get_photo_repository(session: DbSession) -> PhotoRepository:

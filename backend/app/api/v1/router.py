@@ -18,6 +18,7 @@ from app.api.v1 import (
     photos,
     reconstructions,
     search,
+    stats,
 )
 
 __all__ = ["api_router"]
@@ -31,3 +32,4 @@ api_router.include_router(objects.router)
 api_router.include_router(reconstructions.router)
 api_router.include_router(models.router)
 api_router.include_router(licenses.router)
+api_router.include_router(stats.router)
