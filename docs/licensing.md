@@ -78,3 +78,70 @@ Cada resultado publica, junto a la imagen:
 - `provenance.json` — JSON firmado: ids de fotos, checksums, pesos, versión del
   pipeline, git sha, id del modelo, parámetros. Reproducible bit a bit.
 - Una tarjeta de créditos renderizada para compartir en redes.
+
+---
+
+## Datos de terceros: qué podemos usar para entrenar, y qué no
+
+Esta sección existe para que la pregunta "¿y si entrenamos con las fotos de X?" no se
+replantee cada seis meses sin ver el análisis.
+
+### El principio
+
+Ya decidimos, más arriba en este mismo documento, que **las licencias Creative Commons
+no dicen nada sobre entrenamiento de modelos** y que ampararse en esa ambigüedad sería
+aprovecharse de los usuarios. Por eso pedimos `allow_ai_training` explícito y separado
+de la licencia.
+
+Ese principio **se aplica igual a los usuarios de otras plataformas**. Si solo vale
+cuando nos conviene, no es un principio. El silencio de unos términos de servicio sobre
+IA no es permiso.
+
+### AstroBin
+
+Es el repositorio de astrofotografía de referencia (desde 2011, con plate solving
+automático, base de datos de equipamiento, licencias CC por imagen y un repositorio
+compartido de FITS/RAW). Tiene API. **No podemos usar sus fotos para entrenar.** Tres
+razones independientes, cualquiera de ellas suficiente
+([Términos de Servicio](https://welcome.astrobin.com/terms-of-service)):
+
+1. **El scraping está prohibido.** *User Conduct*: nada de acceso "via any robot,
+   spider, scraper or other automated means without our express written permission,
+   with the exception of established Search Engines".
+2. **La API es para mostrar, no para obtener datos.** Máximo 30 imágenes de AstroBin
+   por página; prohibido "replicate or attempt to replace the essential user
+   experience"; y uso comercial permitido solo si "the primary purpose of your
+   application has nothing to do with the display of astronomical images from third
+   party services" — evaluado al conceder la clave. Nuestro propósito principal *son*
+   imágenes astronómicas, así que ese permiso no nos corresponde.
+3. **AstroBin no puede licenciarnos nada aunque quisiera.** "By uploading your
+   photographic works to the Site, you retain full rights that you had prior to
+   uploading." El copyright es del fotógrafo; AstroBin solo se reserva uso promocional
+   y redistribución no comercial. Un acuerdo con la plataforma no nos daría derechos
+   sobre una sola foto.
+
+Matiz técnico, para no exagerar en la otra dirección: una foto concreta publicada allí
+bajo CC-BY o CC0 sí lleva esa licencia consigo, y usarla conforme a sus términos sería
+legal. Pero sigue sin poder obtenerse por scraping, y sigue sin haber consentimiento
+explícito de entrenamiento.
+
+### Lo que sí es legítimo
+
+- **Importación por el propio autor.** Un flujo donde el usuario se autentica él mismo,
+  trae **sus** imágenes y marca nuestras casillas de consentimiento. Es el titular de
+  derechos ejerciendo sus derechos, no nosotros recolectando.
+- **Acuerdo explícito con opt-in**, si alguna plataforma quiere colaborar.
+- **Datasets publicados para investigación**: AstroSR (pares SDSS↔HSC), STAR (54.738
+  pares del HST), DESI–HST de FluxFlow, BurstSR, PROBA-V. Ver
+  `docs/research/multi-image-astro-reconstruction.md` §7 y respetar la licencia de cada uno.
+- **Archivos profesionales públicos**: MAST (HST/JWST), ESO, DESI Legacy Survey.
+- **Nuestro propio corpus**, que es la vía principal: un apilado profundo Tier A es
+  pseudo-verdad legítima para subconjuntos pequeños extraídos de él mismo. Escala sola
+  conforme crece el repositorio y solo usa fotos con `allow_ai_training = true`.
+  Implementado en `models/training/dataset.py`.
+
+### La regla operativa
+
+Ningún dato entra en un `dataset_snapshot` sin una de estas tres cosas: consentimiento
+explícito del autor en nuestra plataforma, una licencia que cubra expresamente el uso, o
+un acuerdo firmado. **La duda se resuelve dejando el dato fuera**, no dentro.
