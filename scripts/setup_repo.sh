@@ -13,6 +13,8 @@
 #   ./scripts/setup_repo.sh                    # pide confirmación y aplica
 #   ./scripts/setup_repo.sh --yes              # aplica sin preguntar (para CI)
 #   ./scripts/setup_repo.sh --repo otro/repo   # sobre otro repositorio
+#   ./scripts/setup_repo.sh --solo             # sin revisiones ni CODEOWNERS
+#                                              # (proyecto de una sola persona)
 #
 # Requisitos: `gh` autenticado con permisos de administración del repositorio.
 
@@ -21,6 +23,15 @@ set -euo pipefail
 REPO="${ASTRO_REPO:-astro-jdc/astro-photos}"
 DRY_RUN=false
 ASSUME_YES=false
+# Con un solo desarrollador, exigir revisiones y CODEOWNERS bloquea el repo: no
+# puedes aprobar tu propio PR, y una entrada de CODEOWNERS que apunte a un equipo
+# inexistente hace que la regla no pueda satisfacerse nunca. --solo baja esas dos
+# y deja intacto lo que de verdad protege: PR obligatorio, CI en verde, historial
+# lineal, sin force-push ni borrado.
+SOLO=false
+REVIEWS_MAIN="${ASTRO_REVIEWS_MAIN:-1}"
+REVIEWS_DEVELOP="${ASTRO_REVIEWS_DEVELOP:-1}"
+CODEOWNERS_REVIEW="${ASTRO_CODEOWNERS_REVIEW:-true}"
 
 RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BLUE=$'\033[34m'; DIM=$'\033[2m'; RESET=$'\033[0m'
 
@@ -33,11 +44,18 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=true; shift ;;
     --yes|-y)  ASSUME_YES=true; shift ;;
+    --solo)    SOLO=true; shift ;;
     --repo)    REPO="$2"; shift 2 ;;
     -h|--help) usage 0 ;;
     *) echo "${RED}Opción desconocida: $1${RESET}" >&2; usage 1 ;;
   esac
 done
+
+if $SOLO; then
+  REVIEWS_MAIN=0
+  REVIEWS_DEVELOP=0
+  CODEOWNERS_REVIEW=false
+fi
 
 log()  { printf '%s\n' "$*"; }
 info() { printf '%s→%s %s\n' "$BLUE" "$RESET" "$*"; }
@@ -86,7 +104,7 @@ cat <<EOF
 
   Se va a:
     · crear la rama 'develop' si no existe
-    · proteger 'main'     (PR obligatorio, 1 review, checks ci/backend ci/frontend
+    · proteger 'main'     (PR obligatorio, $REVIEWS_MAIN review(s), checks ci/backend ci/frontend
                            ci/infra ci/models, historial lineal, sin force-push,
                            conversaciones resueltas)
     · proteger 'develop'  (PR obligatorio, mismos checks, sin force-push)
@@ -129,13 +147,14 @@ proteger() {
     --argjson revisiones "$revisiones" \
     --argjson lineal "$lineal" \
     --argjson conversaciones "$conversaciones" \
+    --argjson codeowners "$CODEOWNERS_REVIEW" \
     '{
       required_status_checks: { strict: true, contexts: $checks },
       enforce_admins: false,
       required_pull_request_reviews: {
         required_approving_review_count: $revisiones,
         dismiss_stale_reviews: true,
-        require_code_owner_reviews: true,
+        require_code_owner_reviews: $codeowners,
         require_last_push_approval: true
       },
       restrictions: null,
@@ -160,10 +179,10 @@ proteger() {
 
 info "Protección de ramas"
 # main: PR obligatorio, 1 review, historial lineal (squash), conversaciones resueltas.
-proteger "$DEFAULT_BRANCH" 1 true true
+proteger "$DEFAULT_BRANCH" "$REVIEWS_MAIN" true true
 # develop: PR obligatorio y checks, pero sin exigir historial lineal (es la rama
 # de integración: los back-merges traen merges de verdad).
-proteger develop 1 false false
+proteger develop "$REVIEWS_DEVELOP" false false
 
 # Squash merge como única estrategia: `main` tiene que quedar lineal.
 info "Estrategia de merge"
