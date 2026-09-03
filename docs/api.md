@@ -42,7 +42,7 @@ verificación (tamaño, magic bytes, antivirus) que pone `quarantined` si algo n
 | método | ruta | descripción |
 |---|---|---|
 | `GET` | `/photos/{id}` 🔓 | metadata completa (la ubicación se ofusca según `location_precision`) |
-| `PATCH` | `/photos/{id}` | edita metadata; la licencia solo puede **relajarse** si `license_locked_at` no es NULL |
+| `PATCH` | `/photos/{id}` | edita metadata. Mientras `license_locked_at` sea NULL la licencia se cambia libremente; una vez fijado, solo puede **relajarse** (bajar de restrictividad). Ver `docs/licensing.md`. |
 | `DELETE` | `/photos/{id}` | soft-delete; rechazado con 409 si la foto participa en reconstrucciones publicadas |
 | `GET` | `/photos/{id}/download` | 302 a URL de CloudFront firmada; incrementa `download_count` y audita |
 

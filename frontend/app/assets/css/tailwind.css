@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html.light {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-night-950 text-night-100 antialiased;
+  }
+
+  html.light body {
+    @apply bg-white text-night-900;
+  }
+
+  /* Contraste AA sobre ambos fondos. */
+  .muted {
+    @apply text-night-300;
+  }
+
+  html.light .muted {
+    @apply text-night-700;
+  }
+
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-sky-400;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .surface {
+    @apply rounded-xl border border-night-800 bg-night-900/60;
+  }
+
+  html.light .surface {
+    @apply border-night-200 bg-night-50/60;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-sky-500 text-night-950 hover:bg-sky-400;
+  }
+
+  .btn-secondary {
+    @apply btn border border-night-700 text-night-100 hover:bg-night-800;
+  }
+
+  html.light .btn-secondary {
+    @apply border-night-300 text-night-900 hover:bg-night-100;
+  }
+
+  .btn-ghost {
+    @apply btn text-night-200 hover:bg-night-800;
+  }
+
+  html.light .btn-ghost {
+    @apply text-night-800 hover:bg-night-100;
+  }
+
+  .field-label {
+    @apply mb-1 block text-sm font-medium;
+  }
+
+  .field-input {
+    @apply w-full rounded-lg border border-night-700 bg-night-900 px-3 py-2 text-sm text-night-50 placeholder:text-night-400 focus:border-sky-400;
+  }
+
+  html.light .field-input {
+    @apply border-night-300 bg-white text-night-900 placeholder:text-night-500;
+  }
+
+  .field-help {
+    @apply mt-1 text-xs muted;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-night-700 px-2 py-0.5 text-xs;
+  }
+
+  html.light .chip {
+    @apply border-night-300;
+  }
+}
