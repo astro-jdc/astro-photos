@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node
+node_modules/
+.nuxt/
+.output/
+.nitro/
+.cache/
+frontend/dist/
+
+# CDK
+infra/cdk.out/
+infra/.cdk.staging/
+
+# Datos y pesos: nunca a git
+models/weights/
+models/data/
+models/runs/
+*.fits
+*.fit
+*.cr2
+*.cr3
+*.nef
+*.arw
+*.dng
+*.tif
+*.tiff
+!docs/**/*.png
+
+# Local
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.sqlite3
+.tmp/
