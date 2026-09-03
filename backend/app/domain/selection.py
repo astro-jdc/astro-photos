@@ -56,10 +56,22 @@ _MAX_PHASE_DISTANCE = math.sqrt(0.5)
 
 
 class RejectionReason(StrEnum):
-    """Motivos de descarte. Se persisten en ``reconstruction_inputs.rejection_reason``."""
+    """Motivos de descarte de un frame.
 
-    BELOW_MIN_QUALITY = "below_min_quality"
-    MISSING_GEOMETRY = "missing_geometry"
+    Un **rechazo** no es un **bloqueo**: el bloqueo (``domain.licensing``) aborta el
+    job entero con 422 porque no hay forma legal de continuar; un rechazo solo deja
+    ese frame fuera y el job sigue. Una foto sin resolver astrométricamente no debe
+    tumbar una reconstrucción, solo quedarse fuera de ella.
+
+    Se persisten en ``reconstruction_inputs.rejection_reason`` y viajan en el
+    ``rejected[]`` del preview.
+    """
+
+    #: Por debajo del ``min_quality`` pedido.
+    TOO_LOW_QUALITY = "too_low_quality"
+    #: Sin fase sub-píxel ni escala de placa: falta el plate solving.
+    UNSOLVED = "unsolved"
+    #: Utilizable, pero no entró en los N mejores por calidad y diversidad.
     NOT_SELECTED = "not_selected"
 
 
@@ -205,7 +217,7 @@ def select_frames(
             rejected.append(
                 RejectedFrame(
                     c.photo_id,
-                    RejectionReason.BELOW_MIN_QUALITY,
+                    RejectionReason.TOO_LOW_QUALITY,
                     f"quality_score {c.quality_score:.3f} < mínimo {min_quality:.3f}",
                 )
             )
@@ -222,7 +234,7 @@ def select_frames(
         rejected.extend(
             RejectedFrame(
                 c.photo_id,
-                RejectionReason.MISSING_GEOMETRY,
+                RejectionReason.UNSOLVED,
                 "sin fase sub-píxel ni escala de placa (falta plate solving)",
             )
             for c in no_geometry

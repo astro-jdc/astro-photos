@@ -349,3 +349,77 @@ async def test_stats_query_survives_an_empty_database(session: AsyncSession) -> 
     assert stats.photo_count == 0
     assert stats.contributor_count == 0
     assert stats.total_exposure_seconds == 0.0
+
+
+async def test_coverage_and_raw_sites_queries_run_against_postgis(
+    session: AsyncSession,
+) -> None:
+    """El histograma y ``raw_sites``, contra Postgres de verdad.
+
+    Son SQL con PostGIS (`ST_Y`), `width_bucket` y agregados: probarlos solo con
+    dobles no demostraría que la consulta existe siquiera.
+    """
+    from app.domain.location import LocationPrecision
+    from app.repositories.sky_object import SkyObjectRepository
+    from app.services.sky_object import build_sites
+
+    user = await _user(session)
+    obj = SkyObject(
+        catalog=ObjectCatalog.MESSIER,
+        catalog_number="42",
+        common_name="Orion Nebula",
+        object_type=ObjectType.NEBULA,
+        ra_deg=83.822,
+        dec_deg=-5.391,
+    )
+    session.add(obj)
+    await session.flush()
+
+    def shot(key: str, lat: float, lon: float, precision: str, focal: float) -> Photo:
+        return Photo(
+            owner_id=user.id,
+            status=PhotoStatus.READY,
+            s3_bucket="b",
+            s3_key_original=key,
+            checksum_sha256=key.encode().ljust(32, b"\x00")[:32],
+            object_id=obj.id,
+            location=f"SRID=4326;POINT({lon} {lat})",
+            location_precision=LocationPrecision(precision),
+            country_code="ES",
+            captured_at_utc=datetime(2026, 2, 14, 3, tzinfo=UTC),
+            focal_length_mm=focal,
+            quality_score=0.8,
+        )
+
+    session.add_all(
+        [
+            shot("north-exact", 40.4, -3.7, "exact", 200.0),
+            shot("north-city", 40.41, -3.71, "city", 600.0),
+            shot("south-hidden", -33.9, 18.4, "hidden", 200.0),
+        ]
+    )
+    await session.flush()
+
+    repo = SkyObjectRepository(session)
+    cells = await repo.coverage(obj.id)
+    assert cells, "el histograma no devolvió ninguna celda"
+    assert all(c.period == "2026-02" for c in cells)
+    # La foto oculta cuenta, pero sin latitud: una banda de 15° sigue siendo una
+    # posición y su autor no autorizó publicarla.
+    assert {c.lat_bin for c in cells} == {30, -999}
+    assert all(c.best_quality == pytest.approx(0.8) for c in cells)
+
+    raw = await repo.raw_sites(obj.id)
+    # La oculta se excluye ya en SQL: no hay agregación en la que deba contribuir.
+    assert len(raw) == 2
+    assert LocationPrecision.HIDDEN not in {r.precision for r in raw}
+
+    sites = build_sites(raw)
+    assert sum(s.count for s in sites) == 2
+    # La exacta y la de ciudad caen en el mismo punto publicado tras redondear, así
+    # que se funden — y el punto queda etiquetado con la precisión más gruesa, que es
+    # la única afirmación sostenible sobre él.
+    assert len(sites) == 1
+    assert sites[0].precision == "city"
+    assert sites[0].lat == pytest.approx(40.4)
+    await session.rollback()

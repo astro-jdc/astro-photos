@@ -18,12 +18,15 @@ from typing import Any
 import pytest
 
 from app.core.config import Settings
-from app.core.errors import LicenseBlockedError, RateLimitError
+from app.core.errors import LicenseBlockedError, NotFoundError, RateLimitError
+from app.domain.disclosure import ResultArtifacts
 from app.domain.licensing import LicenseCode
-from app.models.enums import PhotoStatus
+from app.domain.selection import RejectionReason
+from app.models.enums import JobStatus, PhotoStatus
 from app.models.photo import Photo
 from app.models.reconstruction import Reconstruction, ReconstructionInput
 from app.schemas.reconstruction import ReconstructionCreateIn
+from app.schemas.search import PhotoSearchQuery
 from app.services.reconstruction import ReconstructionService
 
 OBJECT_ID = uuid.UUID("33333333-3333-3333-3333-333333333333")
@@ -219,9 +222,10 @@ async def test_preview_estimates_a_cost(fake_user: Any, settings: Settings) -> N
     photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 5)]
     service, _, _ = build(photos, settings)
     plan = await service.preview(user=fake_user, payload=payload(photos, pipeline="drizzle-v1"))
-    assert plan.cost_estimate is not None
-    assert plan.cost_estimate.compute_seconds == pytest.approx(16.0)
-    assert "AWS Batch" in plan.cost_estimate.basis
+    assert plan.estimated_compute_seconds == pytest.approx(16.0)
+    assert plan.estimated_cost_usd is not None and plan.estimated_cost_usd > 0
+    assert plan.estimated_queue_seconds is not None
+    assert plan.cost_basis is not None and "AWS Batch" in plan.cost_basis
 
 
 # --------------------------------------------------------------------------- #
@@ -450,3 +454,233 @@ async def test_best_single_frame_handles_photos_without_a_score() -> None:
     )
     assert best is not None
     assert best.photo_id == scored.id
+
+
+# --------------------------------------------------------------------------- #
+# Etiquetado de IA y separación bloqueo/rechazo en el preview
+# --------------------------------------------------------------------------- #
+async def test_preview_flags_a_classical_pipeline_as_not_learned(
+    fake_user: Any, settings: Settings
+) -> None:
+    """`classical-stack-v1` combina píxeles medidos: no hay nada que inferir."""
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 5)]
+    service, _, _ = build(photos, settings)
+    plan = await service.preview(
+        user=fake_user, payload=payload(photos, pipeline="classical-stack-v1")
+    )
+    assert plan.uses_learned_model is False
+
+
+async def test_preview_flags_a_learned_pipeline(fake_user: Any, settings: Settings) -> None:
+    """Es lo que dispara el aviso de IA del frontend (regla dura 2 de CLAUDE.md)."""
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 5)]
+    service, _, _ = build(photos, settings)
+    plan = await service.preview(user=fake_user, payload=payload(photos, pipeline="burst-sr-v1"))
+    assert plan.uses_learned_model is True
+
+
+async def test_preview_reports_optics_of_the_selected_frames(
+    fake_user: Any, settings: Settings
+) -> None:
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 5)]
+    for p in photos:
+        p.fwhm_arcsec = 2.5
+    service, _, _ = build(photos, settings)
+    plan = await service.preview(user=fake_user, payload=payload(photos))
+    assert all(f.fwhm_arcsec == pytest.approx(2.5) for f in plan.selected)
+    assert all(f.pixel_scale_arcsec == pytest.approx(2.0) for f in plan.selected)
+
+
+async def test_preview_separates_rejected_from_blocked(fake_user: Any, settings: Settings) -> None:
+    """Un frame sin resolver se **rechaza**; no bloquea el job, que sigue vivo.
+
+    Es la distinción que el contrato tenía mezclada: `blocked[]` aborta con 422
+    porque no hay forma legal de continuar; `rejected[]` solo deja el frame fuera.
+    """
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 5)]
+    unsolved = make_photo(9)
+    unsolved.dither_phase_x = None
+    unsolved.dither_phase_y = None
+    unsolved.pixel_scale_arcsec = None
+    everything = [*photos, unsolved]
+    service, _, _ = build(everything, settings)
+    # Vía `selector`: con lista explícita el target es la lista entera y un frame sin
+    # resolver se usa igualmente (aporta SNR) en vez de descartarse.
+    plan = await service.preview(
+        user=fake_user,
+        payload=ReconstructionCreateIn(
+            object_id=OBJECT_ID,
+            selector=PhotoSearchQuery(),
+            target_count=len(photos),
+        ),
+    )
+    assert plan.blocked == []
+    assert plan.can_run is True
+    assert RejectionReason.UNSOLVED in {r.reason for r in plan.rejected}
+    assert unsolved.id not in {f.photo_id for f in plan.selected}
+
+
+async def test_an_explicit_list_still_uses_an_unsolved_frame_for_snr(
+    fake_user: Any, settings: Settings
+) -> None:
+    """Si el usuario la pide por id, un frame sin resolver entra: aporta señal.
+
+    Solo se descarta cuando hay frames resueltos de sobra para llenar el cupo.
+    """
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 4)]
+    unsolved = make_photo(9)
+    unsolved.dither_phase_x = None
+    unsolved.dither_phase_y = None
+    unsolved.pixel_scale_arcsec = None
+    everything = [*photos, unsolved]
+    service, _, _ = build(everything, settings)
+    plan = await service.preview(user=fake_user, payload=payload(everything))
+    assert unsolved.id in {f.photo_id for f in plan.selected}
+
+
+async def test_a_blocked_photo_still_aborts_the_whole_job(
+    fake_user: Any, settings: Settings
+) -> None:
+    """El contraste con el test anterior: esto sí es un bloqueo, y aborta."""
+    photos = [make_photo(i, dither=(i / 5, 0.0)) for i in range(1, 4)]
+    photos.append(make_photo(9, LicenseCode.CC_BY_ND, dither=(0.9, 0.9)))
+    service, _, _ = build(photos, settings)
+    plan = await service.preview(user=fake_user, payload=payload(photos))
+    assert plan.can_run is False
+    assert len(plan.blocked) == 1
+
+
+# --------------------------------------------------------------------------- #
+# publish_result — la regla dura 2 la impone la máquina
+# --------------------------------------------------------------------------- #
+def _job(pipeline: str, model_id: uuid.UUID | None = None) -> Reconstruction:
+    job = Reconstruction(
+        id=uuid.uuid4(),
+        requested_by=uuid.uuid4(),
+        pipeline=pipeline,
+        pipeline_version="sha",
+        model_id=model_id,
+        status=JobStatus.RUNNING,
+        input_count=4,
+        license=LicenseCode.CC_BY,
+    )
+    job.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    job.updated_at = job.created_at
+    return job
+
+
+class _JobRepo:
+    def __init__(self, job: Reconstruction) -> None:
+        self.job = job
+
+    async def get(self, reconstruction_id: uuid.UUID) -> Reconstruction | None:
+        return self.job if reconstruction_id == self.job.id else None
+
+
+def _publisher(job: Reconstruction, settings: Settings) -> ReconstructionService:
+    return ReconstructionService(
+        photos=FakePhotoRepo([]),  # type: ignore[arg-type]
+        reconstructions=_JobRepo(job),  # type: ignore[arg-type]
+        objects=FakeObjectRepo(),  # type: ignore[arg-type]
+        audit=FakeAudit(),  # type: ignore[arg-type]
+        queue=FakeQueue(),
+        settings=settings,
+    )
+
+
+async def test_a_classical_result_publishes_without_an_uncertainty_map(
+    settings: Settings,
+) -> None:
+    """Un apilado clásico combina píxeles medidos: no hay nada que desetiquetar."""
+    job = _job("classical-stack-v1")
+    published = await _publisher(job, settings).publish_result(
+        reconstruction_id=job.id,
+        artifacts=ResultArtifacts(
+            pipeline="classical-stack-v1",
+            s3_key_result="r.fits",
+            s3_key_attribution="ATTRIBUTION.md",
+        ),
+    )
+    assert published.status is JobStatus.SUCCEEDED
+    assert published.progress == pytest.approx(1.0)
+
+
+async def test_a_learned_result_without_uncertainty_map_is_refused(
+    settings: Settings,
+) -> None:
+    """Regla dura 2: nada generado sin etiquetar. Lo impone la máquina, no la costumbre."""
+    job = _job("burst-sr-v1")
+    published = await _publisher(job, settings).publish_result(
+        reconstruction_id=job.id,
+        artifacts=ResultArtifacts(
+            pipeline="burst-sr-v1",
+            s3_key_result="r.fits",
+            s3_key_attribution="ATTRIBUTION.md",
+        ),
+    )
+    assert published.status is JobStatus.FAILED
+    assert published.error_message is not None
+    assert "incertidumbre" in published.error_message
+    # Y no se ha publicado nada: el resultado no queda accesible.
+    assert published.s3_key_result is None
+
+
+async def test_a_learned_result_with_uncertainty_map_publishes(
+    settings: Settings,
+) -> None:
+    job = _job("burst-sr-v1")
+    published = await _publisher(job, settings).publish_result(
+        reconstruction_id=job.id,
+        artifacts=ResultArtifacts(
+            pipeline="burst-sr-v1",
+            s3_key_result="r.fits",
+            s3_key_uncertainty="unc.fits",
+            s3_key_weight_map="w.fits",
+            s3_key_attribution="ATTRIBUTION.md",
+        ),
+        metrics={"snr_gain_db": 9.0},
+    )
+    assert published.status is JobStatus.SUCCEEDED
+    assert published.s3_key_uncertainty == "unc.fits"
+
+
+async def test_a_classical_pipeline_with_an_explicit_model_also_needs_the_map(
+    settings: Settings,
+) -> None:
+    """Un `model_id` en un pipeline clásico es una incoherencia: se trata como aprendido."""
+    model_id = uuid.uuid4()
+    job = _job("drizzle-v1", model_id)
+    published = await _publisher(job, settings).publish_result(
+        reconstruction_id=job.id,
+        artifacts=ResultArtifacts(
+            pipeline="drizzle-v1",
+            model_id=str(model_id),
+            s3_key_result="r.fits",
+            s3_key_attribution="ATTRIBUTION.md",
+        ),
+    )
+    assert published.status is JobStatus.FAILED
+
+
+async def test_a_result_without_attribution_is_refused(settings: Settings) -> None:
+    """Regla 5 de docs/licensing.md: atribución siempre, venga de donde venga."""
+    job = _job("classical-stack-v1")
+    published = await _publisher(job, settings).publish_result(
+        reconstruction_id=job.id,
+        artifacts=ResultArtifacts(pipeline="classical-stack-v1", s3_key_result="r.fits"),
+    )
+    assert published.status is JobStatus.FAILED
+    assert "ATTRIBUTION" in (published.error_message or "")
+
+
+async def test_publishing_an_unknown_job_is_a_404(settings: Settings) -> None:
+    job = _job("classical-stack-v1")
+    with pytest.raises(NotFoundError):
+        await _publisher(job, settings).publish_result(
+            reconstruction_id=uuid.uuid4(),
+            artifacts=ResultArtifacts(
+                pipeline="classical-stack-v1",
+                s3_key_result="r.fits",
+                s3_key_attribution="a.md",
+            ),
+        )

@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from app.domain.licensing import LicenseCode
+from app.domain.selection import RejectionReason
 from app.models.enums import JobStatus
 from app.schemas.common import Schema
 from app.schemas.license import BlockedPhotoOut
@@ -22,6 +23,7 @@ __all__ = [
     "ReconstructionOut",
     "ReconstructionPlanOut",
     "ReconstructionResultOut",
+    "RejectedFrameOut",
     "SelectedFrameOut",
 ]
 
@@ -78,21 +80,20 @@ class SelectedFrameOut(Schema):
     weight: float
     diversity_gain: float
     rank: int
+    fwhm_arcsec: float | None = None
+    pixel_scale_arcsec: float | None = None
 
 
 class RejectedFrameOut(Schema):
+    """Un frame que se queda fuera **sin** abortar el job.
+
+    Distinto de ``blocked[]``: aquello es un bloqueo legal que aborta la
+    reconstrucción entera con 422; esto es un descarte de selección y el job sigue.
+    """
+
     photo_id: UUID
-    reason: str
+    reason: RejectionReason
     detail: str
-
-
-class CostEstimateOut(Schema):
-    """Estimación grosera; el número real sale de AWS Batch al terminar."""
-
-    compute_seconds: float
-    usd: float
-    #: Cómo se estimó, para que el frontend no lo presente como una promesa.
-    basis: str
 
 
 class ReconstructionPlanOut(Schema):
@@ -121,7 +122,17 @@ class ReconstructionPlanOut(Schema):
     #: Escala de placa efectiva alcanzable, arcsec/píxel.
     estimated_pixel_scale_arcsec: float | None = None
     estimated_snr_gain_db: float | None = None
-    cost_estimate: CostEstimateOut | None = None
+    #: Segundos de cómputo estimados. Es una estimación de producto, no una promesa:
+    #: el número real lo devuelve AWS Batch al terminar.
+    estimated_compute_seconds: float | None = None
+    #: Espera en cola antes de empezar (arranque en frío de Batch spot).
+    estimated_queue_seconds: float | None = None
+    estimated_cost_usd: float | None = None
+    #: Cómo se estimó, para que la UI no lo presente como una cifra cerrada.
+    cost_basis: str | None = None
+    #: Si es ``true`` la UI **debe** enseñar el aviso de IA (regla dura 2 de
+    #: ``CLAUDE.md``: nada generado sin etiquetar).
+    uses_learned_model: bool = False
     can_run: bool = False
     #: Avisos honestos (regla dura 1 de CLAUDE.md).
     warnings: list[str] = Field(default_factory=list)

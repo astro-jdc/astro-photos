@@ -28,6 +28,11 @@ from app.core.errors import (
     UnprocessableError,
 )
 from app.domain.astro import diffraction_limit_arcsec
+from app.domain.disclosure import (
+    ResultArtifacts,
+    uses_learned_model,
+    validate_publishable,
+)
 from app.domain.licensing import PhotoLicenseFacts, resolve_output_license
 from app.domain.selection import FrameCandidate, SelectionResult, select_frames
 from app.models.enums import JobStatus, PhotoStatus
@@ -40,7 +45,6 @@ from app.repositories.reconstruction import ReconstructionRepository
 from app.repositories.sky_object import SkyObjectRepository
 from app.schemas.license import BlockedPhotoOut
 from app.schemas.reconstruction import (
-    CostEstimateOut,
     ReconstructionCreateIn,
     ReconstructionPlanOut,
     RejectedFrameOut,
@@ -53,6 +57,8 @@ log = structlog.get_logger(__name__)
 
 #: Coste orientativo de un core-segundo de AWS Batch (c6i spot, eu-west-1).
 USD_PER_COMPUTE_SECOND = 0.000012
+#: Espera típica antes de que Batch arranque un job spot en frío, en segundos.
+COLD_START_QUEUE_SECONDS = 180.0
 #: Segundos de cómputo por frame y pipeline, medidos a ojo en desarrollo. Es una
 #: estimación de producto, no una promesa: el número real lo devuelve Batch.
 SECONDS_PER_FRAME: dict[str, float] = {
@@ -166,13 +172,20 @@ class ReconstructionService:
             for p in photos
         ]
 
-    def _estimate_cost(self, pipeline: str, frame_count: int) -> CostEstimateOut:
+    @staticmethod
+    def _estimate_cost(pipeline: str, frame_count: int) -> tuple[float, float, str]:
+        """``(segundos_de_cómputo, usd, base_de_la_estimación)``.
+
+        Es una estimación de producto, no una promesa: el coste real lo reporta AWS
+        Batch al terminar, y por eso la base viaja en la respuesta para que la UI no
+        lo presente como una cifra cerrada.
+        """
         per_frame = SECONDS_PER_FRAME.get(pipeline, 3.0)
         seconds = per_frame * frame_count
-        return CostEstimateOut(
-            compute_seconds=seconds,
-            usd=round(seconds * USD_PER_COMPUTE_SECOND, 4),
-            basis=(
+        return (
+            seconds,
+            round(seconds * USD_PER_COMPUTE_SECOND, 4),
+            (
                 f"{per_frame} s/frame medidos en desarrollo para «{pipeline}»; "
                 "el coste real lo reporta AWS Batch al terminar."
             ),
@@ -249,7 +262,11 @@ class ReconstructionService:
         allowed = [p for p in photos if str(p.id) in set(resolution.accepted_photo_ids)]
         selection = select_frames(self._candidates(allowed), max(1, target))
         warnings, best_limit, est_scale = self._honest_warnings(allowed, selection)
+        by_id = {str(p.id): p for p in photos}
 
+        compute_seconds, cost_usd, cost_basis = self._estimate_cost(
+            payload.pipeline, len(selection.selected)
+        )
         snr_gain = None
         if len(selection.selected) >= 2:
             # Régimen limitado por fondo: SNR ~ sqrt(N) ⇒ ganancia 10·log10(N) dB.
@@ -268,13 +285,15 @@ class ReconstructionService:
                     weight=f.weight,
                     diversity_gain=f.diversity_gain,
                     rank=f.rank,
+                    fwhm_arcsec=by_id[f.photo_id].fwhm_arcsec if f.photo_id in by_id else None,
+                    pixel_scale_arcsec=(
+                        by_id[f.photo_id].pixel_scale_arcsec if f.photo_id in by_id else None
+                    ),
                 )
                 for f in selection.selected
             ],
             rejected=[
-                RejectedFrameOut(
-                    photo_id=uuid.UUID(r.photo_id), reason=r.reason.value, detail=r.detail
-                )
+                RejectedFrameOut(photo_id=uuid.UUID(r.photo_id), reason=r.reason, detail=r.detail)
                 for r in selection.rejected
             ],
             blocked=[BlockedPhotoOut.from_domain(b) for b in resolution.blocked],
@@ -286,7 +305,11 @@ class ReconstructionService:
             best_diffraction_limit_arcsec=best_limit,
             estimated_pixel_scale_arcsec=est_scale,
             estimated_snr_gain_db=snr_gain,
-            cost_estimate=self._estimate_cost(payload.pipeline, len(selection.selected)),
+            estimated_compute_seconds=compute_seconds,
+            estimated_queue_seconds=COLD_START_QUEUE_SECONDS,
+            estimated_cost_usd=cost_usd,
+            cost_basis=cost_basis,
+            uses_learned_model=uses_learned_model(payload.pipeline, payload.model_id),
             can_run=resolution.ok and len(selection.selected) >= 2,
             warnings=warnings,
         )
@@ -426,6 +449,70 @@ class ReconstructionService:
         )
         log.info("reconstruction_enqueued", reconstruction_id=str(job.id))
         return job, True
+
+    # ------------------------------------------------------------------ #
+    async def publish_result(
+        self,
+        *,
+        reconstruction_id: uuid.UUID,
+        artifacts: ResultArtifacts,
+        metrics: dict[str, Any] | None = None,
+        compute_seconds: float | None = None,
+    ) -> Reconstruction:
+        """Registra el resultado de un job, **imponiendo** la regla dura 2.
+
+        Un pipeline que use un modelo aprendido y no traiga mapa de incertidumbre no
+        se publica: el job se marca ``failed`` con el motivo. Si eso viviera solo en
+        una convención, el día que alguien añada un pipeline se olvidaría; aquí lo
+        impone la máquina.
+
+        Lo llama el worker de reconstrucción al terminar, no un cliente HTTP.
+        """
+        job = await self.reconstructions.get(reconstruction_id)
+        if job is None:
+            raise NotFoundError("La reconstrucción no existe.")
+
+        violations = validate_publishable(artifacts)
+        if violations:
+            job.status = JobStatus.FAILED
+            job.finished_at = datetime.now(UTC)
+            job.error_message = " ".join(v.detail for v in violations)
+            await self.audit.record(
+                action="reconstruction.publish_rejected",
+                entity_type="reconstruction",
+                entity_id=job.id,
+                payload={
+                    "violations": [v.code.value for v in violations],
+                    "pipeline": artifacts.pipeline,
+                },
+            )
+            log.error(
+                "reconstruction_publish_rejected",
+                reconstruction_id=str(job.id),
+                violations=[v.code.value for v in violations],
+            )
+            return job
+
+        job.s3_key_result = artifacts.s3_key_result
+        job.s3_key_uncertainty = artifacts.s3_key_uncertainty
+        job.s3_key_weight_map = artifacts.s3_key_weight_map
+        job.s3_key_attribution = artifacts.s3_key_attribution
+        job.metrics = metrics
+        job.compute_seconds = compute_seconds
+        job.progress = 1.0
+        job.status = JobStatus.SUCCEEDED
+        job.finished_at = datetime.now(UTC)
+        await self.audit.record(
+            action="reconstruction.published",
+            entity_type="reconstruction",
+            entity_id=job.id,
+            payload={
+                "pipeline": job.pipeline,
+                "uses_learned_model": uses_learned_model(artifacts.pipeline, artifacts.model_id),
+            },
+        )
+        log.info("reconstruction_published", reconstruction_id=str(job.id))
+        return job
 
     # ------------------------------------------------------------------ #
     async def cancel(self, *, reconstruction_id: uuid.UUID, user: User) -> Reconstruction:

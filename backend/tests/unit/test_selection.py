@@ -89,7 +89,7 @@ def test_min_quality_rejects_with_the_documented_reason() -> None:
     candidates = [frame("a", 0.9), frame("b", 0.1, 0.5, 0.5), frame("c", 0.7, 0.2, 0.8)]
     result = select_frames(candidates, 3, min_quality=0.5)
     rejected = {r.photo_id: r.reason for r in result.rejected}
-    assert rejected == {"b": RejectionReason.BELOW_MIN_QUALITY}
+    assert rejected == {"b": RejectionReason.TOO_LOW_QUALITY}
     assert {f.photo_id for f in result.selected} == {"a", "c"}
 
 
@@ -177,7 +177,7 @@ def test_frames_without_geometry_are_rejected_when_there_are_enough_solved_ones(
     ]
     result = select_frames(candidates, 3)
     reasons = {r.photo_id: r.reason for r in result.rejected}
-    assert reasons["unsolved"] is RejectionReason.MISSING_GEOMETRY
+    assert reasons["unsolved"] is RejectionReason.UNSOLVED
 
 
 def test_frames_without_geometry_are_used_when_nothing_else_is_available() -> None:

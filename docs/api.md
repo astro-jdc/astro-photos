@@ -99,6 +99,12 @@ alimenta el widget "a este objeto le faltan tomas desde el hemisferio sur". Resp
 `{period_bin, lat_bin_size_deg, focal_bins_mm, cells: [{period, lat_bin, focal_bin, count, best_quality}],
 sites: [{lat, lon, count}], gaps: [{reason, description}]}`.
 
+Las fotos con `location_precision='hidden'` **tampoco aportan latitud a `cells[]`**:
+van a la banda `lat_bin = -999` ("desconocida") y siguen contando en los ejes de
+tiempo y focal. Excluirlas solo de `sites[]` no bastaba: una banda de 15° sigue siendo
+una posición (~1700 km), y su autor no autorizó publicarla ni redondeada. La detección
+de huecos por hemisferio no se resiente; simplemente las ocultas no votan.
+
 Los puntos de `sites[]` vienen **ya ofuscados**, y el orden de las operaciones importa:
 se agrupa por `location_precision` **antes** de agregar, nunca después. Agregar primero
 y ofuscar el centroide después filtraría posiciones exactas por la puerta de atrás,
