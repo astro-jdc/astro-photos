@@ -25,6 +25,9 @@ from sqlalchemy import (
     SmallInteger,
     Text,
     UniqueConstraint,
+    cast,
+    column,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -50,7 +53,33 @@ if TYPE_CHECKING:
     from app.models.sky_object import SkyObject
     from app.models.user import User
 
-__all__ = ["EMBEDDING_DIM", "Photo"]
+__all__ = ["EMBEDDING_DIM", "SKY_LON_SHIFT", "Photo", "sky_geography"]
+
+#: Desplazamiento que lleva RA ∈ [0, 360) al rango de longitudes [-180, 180).
+#: Es una rotación, así que conserva las separaciones angulares.
+SKY_LON_SHIFT = 180.0
+
+
+def sky_geography(ra_deg: Any, dec_deg: Any) -> Any:
+    """La posición en el cielo como ``geography(Point,4326)``.
+
+    Tratar (RA, Dec) como (longitud, latitud) sobre una esfera hace que la distancia
+    entre dos puntos **sea** su separación angular, sin necesidad de ninguna
+    extensión de esferas. Y usar ``geography`` en vez de aritmética sobre las dos
+    columnas hace que PostGIS se ocupe de la topología: el corte en RA = 0/360 y la
+    degeneración de la RA cerca de los polos dejan de ser casos especiales.
+
+    **Esta función es la única definición de la expresión.** El índice GIST de
+    ``photos`` se construye sobre ella y la consulta del cono la reutiliza; si las
+    dos se escribieran por separado, un cambio en una dejaría a la otra sin índice
+    de forma silenciosa. El test de plan (`EXPLAIN` sin `Seq Scan`) es lo que
+    detecta esa deriva si alguna vez ocurre.
+    """
+    return cast(
+        func.ST_SetSRID(func.ST_MakePoint(ra_deg - SKY_LON_SHIFT, dec_deg), 4326),
+        Geography(geometry_type="POINT", srid=4326),
+    )
+
 
 #: Dimensión del embedding visual (``vector(768)`` en ``docs/data-model.md``).
 EMBEDDING_DIM = 768
@@ -224,7 +253,19 @@ class Photo(UUIDPkMixin, TimestampMixin, Base):
         # GIST sobre location: consultas "a menos de N km de aquí".
         Index("ix_photos_location_gist", "location", postgresql_using="gist"),
         Index("ix_photos_object_captured", "object_id", "captured_at_utc"),
+        # BTREE sobre (ra_deg, dec_deg). No puede acelerar una búsqueda por cono
+        # —ninguna función de distancia esférica es indexable por BTREE— pero sirve
+        # para búsquedas por coordenada exacta. Candidato a retirar en una migración
+        # `contract` aparte si se confirma que nadie la usa.
         Index("ix_photos_radec", "ra_deg", "dec_deg"),
+        # El índice que sostiene la búsqueda por cono, que es la consulta central
+        # del producto. Parcial porque solo las fotos resueltas tienen coordenadas.
+        Index(
+            "ix_photos_sky_gist",
+            sky_geography(column("ra_deg"), column("dec_deg")),
+            postgresql_using="gist",
+            postgresql_where=text("ra_deg IS NOT NULL AND dec_deg IS NOT NULL"),
+        ),
         # HNSW sobre el embedding para GET /photos/similar/{id}.
         Index(
             "ix_photos_embedding_hnsw",

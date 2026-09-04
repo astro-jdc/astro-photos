@@ -12,21 +12,22 @@ from datetime import UTC, datetime, time
 from typing import Any, cast
 
 from geoalchemy2 import Geography, Geometry
-from sqlalchemy import Select, and_, func, or_, select, update
+from sqlalchemy import Select, and_, func, literal, or_, select, update
 from sqlalchemy import cast as sa_cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import PhotoStatus
-from app.models.photo import Photo
+from app.models.photo import Photo, sky_geography
 from app.models.sky_object import SkyObject
 from app.repositories.base import CursorPage, KeysetCursor, as_cursor_value, parse_cursor
 from app.schemas.search import PhotoSearchQuery, SortOrder
 
 __all__ = ["PhotoRepository"]
 
-#: Punto en el que el cono en el cielo deja de poder usarse tal cual: cerca de los
-#: polos la comparación en RA se degenera y hay que caer al filtro esférico exacto.
-_SPHERICAL_FALLBACK_DEC = 85.0
+#: Metros de arco por grado sobre la esfera que usa PostGIS para ``geography`` con
+#: ``use_spheroid=false`` (radio 6 371 008.77 m). Convierte un radio en grados —que
+#: es como lo pide la API— a la distancia en metros que espera ``ST_DWithin``.
+METERS_PER_DEGREE = 111_195.0
 
 
 def _wkt_point(lat: float, lon: float) -> str:
@@ -131,17 +132,33 @@ class PhotoRepository:
         if query.owner_id is not None:
             stmt = stmt.where(Photo.owner_id == query.owner_id)
 
-        # Cono en el cielo. Se usa la distancia esférica exacta sobre una esfera
-        # unidad para no depender de una extensión de esferas: ST_DistanceSphere
-        # sobre (ra, dec) tratados como lon/lat es exactamente la separación angular.
+        # Cono en el cielo. Tratar (RA, Dec) como (lon, lat) sobre una esfera hace que
+        # la distancia entre dos puntos sea su separación angular, sin necesidad de
+        # ninguna extensión de esferas.
+        #
+        # `ST_DWithin(geography, geography, d, use_spheroid => false)` es **el mismo
+        # predicado** que el `ST_DistanceSphere(...) <= d` que había antes: PostGIS
+        # reescribe `ST_DistanceSphere` exactamente a `ST_Distance(geog, geog, false)`,
+        # así que el cambio no mueve ni una fila. Lo que sí cambia es que `ST_DWithin`
+        # **es acelerable por índice** y `ST_DistanceSphere` no: antes esta consulta
+        # —la central del producto— hacía un escaneo secuencial de toda la tabla.
+        #
+        # Usar `geography` además hace desaparecer dos casos especiales: el corte en
+        # RA = 0/360 y la degeneración de la RA cerca de los polos los resuelve la
+        # topología esférica, no una caja envolvente escrita a mano.
         if query.ra is not None and query.dec is not None and query.radius is not None:
-            target = func.ST_SetSRID(func.ST_MakePoint(query.ra - 180.0, query.dec), 4326)
-            field = func.ST_SetSRID(func.ST_MakePoint(Photo.ra_deg - 180.0, Photo.dec_deg), 4326)
+            target = sky_geography(literal(query.ra), literal(query.dec))
             stmt = stmt.where(
+                # Repetir los IS NOT NULL no es redundante: son la condición del
+                # índice parcial, y sin ellos el planificador no puede usarlo.
                 Photo.ra_deg.is_not(None),
                 Photo.dec_deg.is_not(None),
-                func.ST_DistanceSphere(field, target)
-                <= query.radius * 111_195.0,  # 1° de arco sobre una esfera de radio R⊕
+                func.ST_DWithin(
+                    sky_geography(Photo.ra_deg, Photo.dec_deg),
+                    target,
+                    query.radius * METERS_PER_DEGREE,
+                    False,
+                ),
             )
 
         if query.near is not None:

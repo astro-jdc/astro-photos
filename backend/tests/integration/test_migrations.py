@@ -72,10 +72,34 @@ def database_url() -> Iterator[str]:
         container.stop()
 
 
+def _reset_schema(url: str) -> None:
+    """Deja la base vacía de verdad antes de migrar.
+
+    No basta con ``alembic downgrade base``: otros módulos de la suite crean el
+    esquema con ``Base.metadata.create_all``, que no escribe ``alembic_version``, así
+    que Alembic no sabe que hay nada que bajar y el ``upgrade`` choca con tablas ya
+    existentes. Este test mide la migración, no el orden en que corran los demás.
+    """
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    async def reset() -> None:
+        engine = create_async_engine(url)
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("DROP SCHEMA public CASCADE"))
+                await conn.execute(text("CREATE SCHEMA public"))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(reset())
+
+
 @pytest.fixture(scope="module")
 def migrated_url(database_url: str) -> Iterator[str]:
     """Aplica ``alembic upgrade head`` sobre una base limpia."""
-    _run_alembic(database_url, "downgrade", "base")
+    _reset_schema(database_url)
     result = _run_alembic(database_url, "upgrade", "head")
     assert result.returncode == 0, f"alembic upgrade head falló:\n{result.stderr}"
     yield database_url
