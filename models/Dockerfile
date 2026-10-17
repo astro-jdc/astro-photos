@@ -96,7 +96,7 @@ CMD ["--help"]
 # ---------------------------------------------------------------------------
 # gpu (optional): everything above, plus torch/CUDA for Tier B
 # ---------------------------------------------------------------------------
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS gpu
+FROM nvidia/cuda:13.3.1-runtime-ubuntu22.04 AS gpu
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
