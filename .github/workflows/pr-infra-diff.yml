@@ -76,7 +76,7 @@ jobs:
       # Se busca el comentario anterior para reescribirlo en vez de acumular uno
       # por push: el PR tiene que leerse, no ser un historial de diffs.
       - name: Buscar el comentario anterior
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@v4
         id: previo
         if: github.event.pull_request.head.repo.full_name == github.repository
         with:
